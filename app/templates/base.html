@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="csrf-token" content="{{ csrf_token_value }}">
+  <meta name="theme-color" content="#e60000">
+  <title>{% block title %}e& Care Prototype{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/phone-frame.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block styles %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <a class="skip-link" href="#main-content">Skip to content</a>
+  <div class="desktop-stage" data-preview="phone">
+    <aside class="preview-tools" aria-label="Preview controls">
+      <span class="preview-label">Prototype preview</span>
+      <div class="preview-switch" role="group" aria-label="Display mode">
+        <button class="preview-mode active" data-mode="phone" type="button">Phone</button>
+        <button class="preview-mode" data-mode="expanded" type="button">Expanded</button>
+      </div>
+      {% block desktop_tools %}{% endblock %}
+    </aside>
+    <div class="phone-device">
+      <div class="phone-notch" aria-hidden="true"><span></span></div>
+      <div class="phone-status" aria-hidden="true">
+        <span id="status-time">9:41</span>
+        <span class="status-icons">▮▮▮ ᯤ ▰</span>
+      </div>
+      <main class="phone-screen" id="main-content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flash-stack">
+              {% for category, message in messages %}<div class="flash flash-{{ category }}" role="status">{{ message }}</div>{% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+      </main>
+      <div class="home-indicator" aria-hidden="true"></div>
+    </div>
+    <p class="desktop-disclaimer">Local UI proof of concept · no live account connection</p>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
+

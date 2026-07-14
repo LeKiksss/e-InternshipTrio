@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Create account · e& Care Prototype{% endblock %}
+{% block body_class %}auth-page register-page{% endblock %}
+{% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">{% endblock %}
+{% block content %}
+<section class="auth-shell register-shell page-enter">
+  <div class="auth-topline"><a class="back-link" href="{{ url_for('auth.login') }}" aria-label="Back to login">←</a><div class="mini-brand">e&amp;</div><span></span></div>
+  <div class="auth-hero compact-hero">
+    <span class="prototype-pill">Secure local account</span>
+    <h1>Create your account</h1>
+    <p>Set up a local profile to explore every prototype workflow.</p>
+  </div>
+  <form method="post" class="auth-card" id="register-form" novalidate>
+    {{ form.hidden_tag() }}
+    {% for field in [form.full_name, form.email, form.phone_number] %}
+      <div class="field-group {% if field.errors %}has-error{% endif %}">
+        {{ field.label }}
+        {{ field(placeholder={"full_name":"Your full name","email":"name@example.com","phone_number":"+971 50 123 4567"}[field.name], autocomplete={"full_name":"name","email":"email","phone_number":"tel"}[field.name]) }}
+        {% if field.errors %}<p class="field-error" role="alert">{{ field.errors[0] }}</p>{% endif %}
+      </div>
+    {% endfor %}
+    <div class="field-group {% if form.password.errors %}has-error{% endif %}">
+      {{ form.password.label }}
+      <div class="password-wrap">{{ form.password(autocomplete="new-password", placeholder="Create a strong password", id="new-password") }}<button type="button" class="password-toggle" data-password-toggle>Show</button></div>
+      <div class="strength-track" aria-hidden="true"><span id="strength-bar"></span></div>
+      <p class="strength-label" id="strength-label">Use 8+ characters with uppercase, lowercase, and a number.</p>
+      {% if form.password.errors %}<p class="field-error" role="alert">{{ form.password.errors[0] }}</p>{% endif %}
+    </div>
+    <div class="field-group {% if form.confirm_password.errors %}has-error{% endif %}">
+      {{ form.confirm_password.label }}
+      <div class="password-wrap">{{ form.confirm_password(autocomplete="new-password", placeholder="Repeat your password") }}<button type="button" class="password-toggle" data-password-toggle>Show</button></div>
+      {% if form.confirm_password.errors %}<p class="field-error" role="alert">{{ form.confirm_password.errors[0] }}</p>{% endif %}
+    </div>
+    <label class="check-label terms-label">{{ form.terms() }} <span>I agree to use this account only for the local prototype demonstration.</span></label>
+    {% if form.terms.errors %}<p class="field-error" role="alert">{{ form.terms.errors[0] }}</p>{% endif %}
+    {{ form.submit(class_="button button-primary button-wide", data_loading_text="Creating account…") }}
+  </form>
+  <p class="auth-switch">Already registered? <a href="{{ url_for('auth.login') }}">Sign in</a></p>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/app.js') }}"></script>{% endblock %}
+
