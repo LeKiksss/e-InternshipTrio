@@ -1,4 +1,4 @@
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_user, logout_user
 from sqlalchemy import func, or_
 
@@ -56,7 +56,7 @@ def forgot_password():
 
 @auth_bp.post("/logout")
 def logout():
+    session.clear()
     logout_user()
     flash("You have signed out securely.", "success")
     return redirect(url_for("auth.login"))
-

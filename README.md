@@ -4,7 +4,7 @@
 
 ## How the application was built
 
-The project uses a Flask application factory with separate authentication and application blueprints. Flask renders the initial interface with Jinja templates, while modular vanilla JavaScript manages screen navigation, animations, modal sheets, and workflow state. SQLAlchemy stores local prototype users and records in SQLite. Deterministic Python services provide repeatable demonstration results without calling external APIs.
+The project uses a Flask application factory with separate authentication and application blueprints. Flask renders the initial interface with Jinja templates, while modular vanilla JavaScript manages screen navigation, animations, modal sheets, and reusable workflow state. SQLAlchemy stores local prototype users and records in SQLite; short-lived drafts and saved roaming recommendations use the authenticated Flask session. Deterministic Python services provide repeatable demonstration results without calling external APIs.
 
 ```text
 Browser UI
@@ -30,7 +30,7 @@ The interface is bundled entirely in the repository. It does not require React, 
 | Password security | `argon2-cffi` | Argon2 password hashing and verification |
 | Frontend | Vanilla JavaScript | Navigation, workflow state, API calls, modals, and animations |
 | Styling | Custom HTML/CSS/SVG | Responsive phone frame, design system, charts, map, and accessibility states |
-| Testing | Pytest | Authentication, route, model, seed-data, and workflow API checks |
+| Testing | Pytest, Playwright | Unit/integration coverage plus end-to-end Chromium workflow checks |
 | Configuration | `python-dotenv` | Optional local `.env` settings |
 
 ## Implemented functionality vs. simulation
@@ -42,10 +42,10 @@ This distinction is important when extracting code for another project.
 | Authentication | Registration, login, logout, remembered sessions, validation, Argon2 hashes, protected routes | Forgot-password message delivery is simulated |
 | Database | SQLite creation, automatic seed data, and persisted user, bill, diagnostic, and complaint records | Seeded customer and telecom records are fictional |
 | Dashboard | Responsive widgets, account snapshot, alerts, help, notifications, loading/error/empty states | Usage, plan, alerts, and notifications are seeded UI data |
-| Network | Animated test workflow, optional location label, saved history, deletion, map layers, zoom | No real speed test, GPS lookup, network API, or map service |
-| Bills | Manual entry, validation, saved bill records, charts, anomaly and recommendation UI | Uploaded files are not stored; OCR and bill analysis are deterministic simulations |
-| Complaints | Guided chat UI, structured form, saved tickets, notes, status timeline, and closing | Assistant classification uses local rules; no LLM or complaint-system integration |
-| Roaming | Destination/date validation, local package filtering, one result at a time, follow-up alternatives | Packages, networks, prices, activation codes, and dialer actions are fictional |
+| Network | Repeatable animated tests, controlled Back/Done/Run Another actions, optional location, saved history, deletion, map layers, and zoom | No real speed test, GPS lookup, network API, or map service |
+| Bills | Repeatable upload/manual flows, preserved draft fields, saved bill records, charts, anomaly and recommendation UI | Uploaded-file metadata is retained for the draft; files, OCR, and analysis are simulated |
+| Complaints | Repeatable guided chat and form flows, editable preserved answers, saved tickets, notes, timeline, and closing | Assistant classification uses local rules; no LLM or complaint-system integration |
+| Roaming | Four-step flow, duration-scaled usage, comparative adjustments, session saves, duplicate protection, viewing, and removal | Packages, networks, prices, activation codes, and dialer actions are fictional |
 | Profile | Persisted name, phone, notification preference, and contact-method edits | Demo plan and linked activity summaries are fictional |
 | Presenter controls | Immediate switching between normal, loading, error, empty, and success states | State changes do not represent live service conditions |
 
@@ -53,7 +53,7 @@ This distinction is important when extracting code for another project.
 
 - **Network & Bill Intelligence** - diagnostic simulation, local history, fictional coverage map, bill entry, simulated parsing, spending chart, anomaly explanation, and plan recommendation.
 - **Complaint Intelligence** - privacy consent, deterministic guided chat, structured-form fallback, preliminary diagnosis, local ticket creation, history, notes, and tracking timeline.
-- **Roaming Package Advisor** - searchable destinations, validated travel dates, natural-language requirements, deterministic package selection, activation guidance, and follow-up alternatives.
+- **Roaming Package Advisor** - searchable destinations, validated travel dates, automatic current-usage recommendation, deterministic comparative adjustments, activation guidance, and session-only saved recommendations.
 - **Shared experience** - account dashboard, profile, help, notifications, responsive phone/expanded modes, accessibility states, toasts, sheets, and presenter controls.
 
 ## Project structure and responsibilities
@@ -89,18 +89,21 @@ app/
     |   `-- phone-frame.css     Desktop phone preview and expanded/mobile layouts
     `-- js/
         |-- app.js              Shared API helper, sheets, toasts, auth, profile, and map behavior
-        |-- navigation.js       Screen and segmented-control navigation
+        |-- navigation.js       Screen, browser-history, and segmented-control navigation
+        |-- workflow-state.js   Shared Back/Forward, draft persistence, reset, and restore controller
         |-- diagnostics.js      Speed-test phases, results, and diagnostic history
         |-- bills.js            Upload simulation, manual form, analysis, and plan modal
         |-- complaints.js       Chat, form, diagnosis, ticket submission, and tracking
-        |-- roaming.js          Trip steps, recommendation, alternatives, copy, and dialer actions
+        |-- roaming.js          Trip steps, scaled usage, adjustments, session saves, copy, and dialer
         `-- demo-controls.js    Presenter state switching and demo-data reset
 
 tests/
 |-- conftest.py                 Test app, database, client, and login fixtures
+|-- browser/                    Real Chromium tests for repeatability, navigation, saves, and refresh
 |-- test_auth.py                Registration, hashing, login, and logout tests
 |-- test_models.py              Seed-data and roaming-catalogue tests
-`-- test_routes.py              Protected routes and workflow API tests
+|-- test_roaming_service.py     Duration scaling and deterministic adjustment rules
+`-- test_routes.py              Protected routes, session state, and workflow API tests
 
 config.py                       Environment-aware development and test configuration
 run.py                          Local application entry point and host/port handling
@@ -157,7 +160,9 @@ Open <http://127.0.0.1:5000>.
 
 | Field | Value |
 | --- | --- |
+| Name | `Prototype Demo User` |
 | Email | `demo@prototype.local` |
+| Phone | `+971501234567` |
 | Password | `Demo123!` |
 
 The password is stored only as an Argon2 hash. The login screen can fill the credentials but will not submit automatically.
@@ -185,10 +190,11 @@ Keep `APP_HOST=127.0.0.1` unless access from another device is intentionally req
 ## Tests
 
 ```bash
+python -m playwright install chromium
 python -m pytest -q
 ```
 
-The current suite contains 13 tests covering authentication, password hashing, route protection, seed data, and core workflow record creation. GitHub Actions runs the suite on Windows and Linux with Python 3.11 and 3.14.
+The suite contains 37 tests: 34 unit/integration checks and three end-to-end Chromium journeys. It covers authentication, password hashing, route protection, seed data, workflow draft restoration, repeated requests, duration-scaled roaming usage, and session save/refresh/remove/logout behavior. GitHub Actions installs Chromium and runs the suite on Windows and Linux with Python 3.11 and 3.14.
 
 ## Repository notes
 

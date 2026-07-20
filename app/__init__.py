@@ -20,7 +20,7 @@ def seed_database():
     demo = User.query.filter_by(email="demo@prototype.local").first()
     if not demo:
         demo = User(
-            full_name="Demo Customer",
+            full_name="Prototype Demo User",
             email="demo@prototype.local",
             phone_number="+971501234567",
             notification_preferences="Important updates",
@@ -29,10 +29,6 @@ def seed_database():
         demo.set_password("Demo123!")
         db.session.add(demo)
         db.session.flush()
-    elif demo.full_name == "Mariam Al Mansoori":
-        # Update databases created before the seeded identity was made explicitly fictional.
-        demo.full_name = "Demo Customer"
-
     package_data = [
         ("Travel Data Lite", 95, 7, "5 GB", 30, 25, "*170*101#", "Demo Network A", "Best for navigation, messaging, and light browsing."),
         ("Travel Connect", 175, 7, "12 GB", 120, 50, "*170*102#", "Preferred Partner 1", "Balanced data and calling for a one-week trip."),

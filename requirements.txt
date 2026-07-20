@@ -7,4 +7,4 @@ email-validator==2.2.0
 argon2-cffi==23.1.0
 python-dotenv==1.1.1
 pytest==8.4.1
-
+playwright==1.61.0

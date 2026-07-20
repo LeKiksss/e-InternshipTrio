@@ -11,7 +11,7 @@
       profile: ["Your account", "Profile"],
     };
 
-    function navigate(screen, targetSegment) {
+    function navigate(screen, targetSegment, { historyMode = "push" } = {}) {
       if (!document.querySelector(`.screen[data-screen="${screen}"]`)) return;
       $$(".screen").forEach((panel) => panel.classList.toggle("active", panel.dataset.screen === screen));
       const index = ["home", "network-bill", "complaints", "roaming", "profile"].indexOf(screen);
@@ -21,9 +21,11 @@
       $("#header-eyebrow").textContent = titles[screen][0];
       $("#header-title").textContent = titles[screen][1];
       $("#app-scroll").scrollTop = 0;
-      history.replaceState(null, "", `#${screen}`);
       if (targetSegment) document.querySelector(`[data-segment="${targetSegment}"]`)?.click();
       $$(".modal-backdrop:not([hidden])").forEach(closeSheet);
+      const state = { screen };
+      if (historyMode === "replace") history.replaceState(state, "", `#${screen}`);
+      else if (historyMode === "push") history.pushState(state, "", `#${screen}`);
     }
     window.App.navigate = navigate;
     $$('[data-nav]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.nav, button.dataset.targetSegment)));
@@ -35,7 +37,12 @@
       $$("[data-segment]").forEach((item) => item.classList.toggle("active", item === button));
       $$("[data-panel]").forEach((panel) => { const active = panel.dataset.panel === button.dataset.segment; panel.classList.toggle("active", active); panel.hidden = !active; });
     }));
-    const initial = location.hash.slice(1);
-    if (titles[initial]) navigate(initial);
+    window.addEventListener("popstate", (event) => {
+      if (event.state?.workflow) return;
+      const screen = event.state?.screen || location.hash.slice(1).split("/")[0] || "home";
+      if (titles[screen]) navigate(screen, null, { historyMode: "none" });
+    });
+    const initial = location.hash.slice(1).split("/")[0];
+    navigate(titles[initial] ? initial : "home", null, { historyMode: "replace" });
   });
 })();
