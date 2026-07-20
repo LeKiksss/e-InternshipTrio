@@ -7,7 +7,7 @@
       home: ["Good afternoon", `Hi, ${$("#header-title").textContent.replace("Hi, ", "")}`],
       "network-bill": ["Smart insights", "Network & bill"],
       complaints: ["Assisted support", "Complaints"],
-      roaming: ["Roaming recommender", "Roam Like Home"],
+      roaming: ["Travel planning", "Roaming Recommender"],
       profile: ["Your account", "Profile"],
     };
 

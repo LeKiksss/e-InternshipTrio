@@ -20,7 +20,7 @@ def login():
         user = User.query.filter(or_(func.lower(User.email) == identity.lower(), User.phone_number == identity.replace(" ", ""))).first()
         if user and user.check_password(form.password.data):
             login_user(user, remember=form.remember.data)
-            flash("Welcome back — your prototype workspace is ready.", "success")
+            flash("Welcome back.", "success")
             next_url = request.args.get("next")
             return redirect(next_url if next_url and next_url.startswith("/") else url_for("main.app_shell"))
         form.password.errors.append("The email, phone, or password is incorrect.")
@@ -51,7 +51,7 @@ def forgot_password():
     contact = (request.form.get("contact") or "").strip()
     if len(contact) < 4:
         return jsonify({"ok": False, "message": "Enter your registered email or phone number."}), 400
-    return jsonify({"ok": True, "message": "A verification link would be sent to your registered contact. Prototype simulation only."})
+    return jsonify({"ok": True, "message": "A verification link would be sent to your registered contact. No message is sent from this workspace."})
 
 
 @auth_bp.post("/logout")

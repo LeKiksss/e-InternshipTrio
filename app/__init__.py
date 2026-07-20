@@ -51,7 +51,7 @@ def seed_database():
     demo = User.query.filter_by(email="demo@prototype.local").first()
     if not demo:
         demo = User(
-            full_name="Prototype Demo User",
+            full_name="Customer Account",
             email="demo@prototype.local",
             phone_number="+971501234567",
             notification_preferences="Important updates",
@@ -60,18 +60,23 @@ def seed_database():
         demo.set_password("Demo123!")
         db.session.add(demo)
         db.session.flush()
+    elif demo.full_name == "Prototype Demo User":
+        demo.full_name = "Customer Account"
     package_data = [
-        ("Travel Data Lite", 95, 7, "5 GB", 30, 25, "*170*101#", "Demo Network A", "Best for navigation, messaging, and light browsing."),
+        ("Travel Data Lite", 95, 7, "5 GB", 30, 25, "*170*101#", "Partner Network A", "Best for navigation, messaging, and light browsing."),
         ("Travel Connect", 175, 7, "12 GB", 120, 50, "*170*102#", "Preferred Partner 1", "Balanced data and calling for a one-week trip."),
-        ("Global Explorer", 320, 14, "30 GB", 300, 100, "*170*103#", "Demo Network B", "Extended validity for longer multi-purpose trips."),
-        ("Voice Traveller", 210, 10, "8 GB", 500, 50, "*170*104#", "Demo Network A", "Designed for frequent daily calls with moderate data."),
+        ("Global Explorer", 320, 14, "30 GB", 300, 100, "*170*103#", "Partner Network B", "Extended validity for longer multi-purpose trips."),
+        ("Voice Traveller", 210, 10, "8 GB", 500, 50, "*170*104#", "Partner Network A", "Designed for frequent daily calls with moderate data."),
         ("Data Max Abroad", 275, 10, "40 GB", 60, 50, "*170*105#", "Preferred Partner 1", "High data allowance for streaming and heavy use."),
     ]
     supported_destinations = json.dumps(DESTINATIONS)
+    activation_instructions = "Review the activation code and confirmation screen before continuing. No package is activated automatically."
     for name, price, days, data, voice, sms, code, network, notes in package_data:
         package = RoamingPackage.query.filter_by(name=name).first()
         if package:
             package.supported_destinations = supported_destinations
+            package.preferred_network = network
+            package.activation_instructions = activation_instructions
         else:
             db.session.add(RoamingPackage(
                 name=name,
@@ -83,31 +88,37 @@ def seed_database():
                 voice_minutes=voice,
                 sms_allowance=sms,
                 activation_code=code,
-                activation_instructions="Dial the fictional code, review the confirmation screen, then confirm. No real activation occurs in this prototype.",
+                activation_instructions=activation_instructions,
                 preferred_network=network,
                 notes=notes,
             ))
 
-    if demo.id and not DiagnosticResult.query.filter_by(user_id=demo.id).first():
+    diagnostic = DiagnosticResult.query.filter_by(user_id=demo.id).first() if demo.id else None
+    if demo.id and not diagnostic:
         db.session.add(DiagnosticResult(
             user_id=demo.id, download_speed=172.4, upload_speed=29.8, latency=21,
-            verdict="Excellent", location_label="Downtown Dubai — demo location",
+            verdict="Excellent", location_label="Downtown Dubai",
             created_at=datetime.now() - timedelta(days=5),
         ))
+    elif diagnostic and diagnostic.location_label == "Downtown Dubai — demo location":
+        diagnostic.location_label = "Downtown Dubai"
     if demo.id and not BillRecord.query.filter_by(user_id=demo.id).first():
         db.session.add(BillRecord(
             user_id=demo.id, total_amount=468, due_date=(datetime.now() + timedelta(days=5)).strftime("%d %b %Y"),
             data_charges=240, call_charges=72, roaming_charges=96, addon_charges=60,
             anomaly_summary="Bill is 28% higher than usual; roaming charges caused most of the increase.",
         ))
-    if demo.id and not ComplaintTicket.query.filter_by(user_id=demo.id).first():
+    ticket = ComplaintTicket.query.filter_by(user_id=demo.id).first() if demo.id else None
+    if demo.id and not ticket:
         db.session.add(ComplaintTicket(
             user_id=demo.id, ticket_number="ET-2026-00142", category="Network", severity="High",
             summary="Intermittent mobile data near the Marina during afternoon hours.", status="Assigned",
             latest_update="Assigned to Network Operations for an area coverage review.",
             expected_resolution="Within 24 hours", assigned_department="Network Operations",
-            location_label="Dubai Marina — demo location",
+            location_label="Dubai Marina",
         ))
+    elif ticket and ticket.location_label == "Dubai Marina — demo location":
+        ticket.location_label = "Dubai Marina"
     db.session.commit()
 
 

@@ -1,12 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Sign in · e& Care Prototype{% endblock %}
+{% block title %}Sign in · e&amp; Care{% endblock %}
 {% block body_class %}auth-page{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">{% endblock %}
 {% block content %}
 <section class="auth-shell page-enter">
   <div class="auth-hero">
     <div class="brand-mark" aria-label="e and">e&amp;</div>
-    <span class="prototype-pill">Customer care prototype</span>
     <h1>Welcome back</h1>
     <p>One clear view of your connection, bills, support, and travel.</p>
   </div>
@@ -30,11 +29,10 @@
       <button class="text-button" type="button" data-open-forgot>Forgot password?</button>
     </div>
     {{ form.submit(class_="button button-primary button-wide", data_loading_text="Signing in…") }}
-    <button class="button button-soft button-wide" type="button" id="demo-fill">Use demo account</button>
-    <p class="auth-security"><span aria-hidden="true">◈</span> Passwords are protected with Argon2 encryption.</p>
+    <button class="button button-soft button-wide" type="button" id="demo-fill">Fill sign-in details</button>
+    <p class="auth-security"><span aria-hidden="true">◈</span> Passwords are secured with Argon2.</p>
   </form>
-  <p class="auth-switch">New to the prototype? <a href="{{ url_for('auth.register') }}">Create an account</a></p>
-  <p class="micro-disclaimer">Prototype demonstration — not connected to a live e&amp; account.</p>
+  <p class="auth-switch">New here? <a href="{{ url_for('auth.register') }}">Create an account</a></p>
 </section>
 
 <div class="modal-backdrop" id="forgot-modal" hidden>
@@ -43,16 +41,14 @@
     <button class="icon-button sheet-close" type="button" data-close-modal aria-label="Close">×</button>
     <div class="sheet-icon">↗</div>
     <h2 id="forgot-title">Reset your password</h2>
-    <p>Enter the email or phone linked to your prototype account.</p>
+    <p>Enter the email or phone linked to your account.</p>
     <form id="forgot-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token_value }}">
       <div class="field-group"><label for="forgot-contact">Email or phone</label><input id="forgot-contact" name="contact" required></div>
       <button class="button button-primary button-wide" type="submit">Send verification link</button>
     </form>
     <div class="inline-message" id="forgot-result" hidden role="status"></div>
-    <p class="tiny-note">This flow is simulated; no message will be sent.</p>
   </section>
 </div>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/app.js') }}"></script>{% endblock %}
-

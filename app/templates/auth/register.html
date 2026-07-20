@@ -1,14 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Create account · e& Care Prototype{% endblock %}
+{% block title %}Create account · e&amp; Care{% endblock %}
 {% block body_class %}auth-page register-page{% endblock %}
 {% block styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">{% endblock %}
 {% block content %}
 <section class="auth-shell register-shell page-enter">
   <div class="auth-topline"><a class="back-link" href="{{ url_for('auth.login') }}" aria-label="Back to login">←</a><div class="mini-brand">e&amp;</div><span></span></div>
   <div class="auth-hero compact-hero">
-    <span class="prototype-pill">Secure local account</span>
     <h1>Create your account</h1>
-    <p>Set up a local profile to explore every prototype workflow.</p>
+    <p>Add your details to get started.</p>
   </div>
   <form method="post" class="auth-card" id="register-form" novalidate>
     {{ form.hidden_tag() }}
@@ -31,7 +30,7 @@
       <div class="password-wrap">{{ form.confirm_password(autocomplete="new-password", placeholder="Repeat your password") }}<button type="button" class="password-toggle" data-password-toggle>Show</button></div>
       {% if form.confirm_password.errors %}<p class="field-error" role="alert">{{ form.confirm_password.errors[0] }}</p>{% endif %}
     </div>
-    <label class="check-label terms-label">{{ form.terms() }} <span>I agree to use this account only for the local prototype demonstration.</span></label>
+    <label class="check-label terms-label">{{ form.terms() }} <span>I agree to the terms of use.</span></label>
     {% if form.terms.errors %}<p class="field-error" role="alert">{{ form.terms.errors[0] }}</p>{% endif %}
     {{ form.submit(class_="button button-primary button-wide", data_loading_text="Creating account…") }}
   </form>
@@ -39,4 +38,3 @@
 </section>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/app.js') }}"></script>{% endblock %}
-

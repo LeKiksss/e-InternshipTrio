@@ -80,7 +80,7 @@
       controller.go("parsing");
       const phases = ["Uploading document", "Extracting information", "Organising charges", "Analysing spending"];
       for (let i = 0; i < phases.length; i += 1) { $("#bill-phase").textContent = phases[i]; $("#bill-progress").style.width = `${(i + 1) * 25}%`; await delay(window.PROTOTYPE?.testing ? 30 : 650); }
-      if ((window.DemoStates?.bill || "normal") === "error") { controller.go("upload"); toast("Simulated parsing failed. Try another file or enter the bill manually.", "error"); return; }
+      if ((window.DemoStates?.bill || "normal") === "error") { controller.go("upload"); toast("Document parsing failed. Try another file or enter the bill manually.", "error"); return; }
       controller.update({ previousView: "upload" });
       controller.go("fields");
       toast("Document fields extracted for confirmation.");

@@ -15,7 +15,7 @@
     }
     const response = await fetch(url, config);
     let data;
-    try { data = await response.json(); } catch { data = { ok: false, message: "The local prototype returned an unexpected response." }; }
+    try { data = await response.json(); } catch { data = { ok: false, message: "The app returned an unexpected response." }; }
     if (!response.ok) {
       const error = new Error(data.message || "Something went wrong. Please try again.");
       error.status = response.status;
@@ -101,7 +101,7 @@
     $("#demo-fill")?.addEventListener("click", () => {
       $("#identity").value = "demo@prototype.local";
       $("#password").value = "Demo123!";
-      toast("Demo credentials filled. Select Sign in when ready.");
+      toast("Sign-in details filled. Select Sign in when ready.");
     });
 
     $$(".auth-card").forEach((form) => form.addEventListener("submit", () => {
@@ -132,7 +132,7 @@
         result.hidden = false;
         result.classList.toggle("error", !response.ok);
         result.textContent = data.message;
-      } catch { result.hidden = false; result.classList.add("error"); result.textContent = "The local simulation could not complete."; }
+      } catch { result.hidden = false; result.classList.add("error"); result.textContent = "The request could not be completed."; }
     });
 
     $("#refresh-account")?.addEventListener("click", async (event) => {
@@ -144,7 +144,7 @@
       card.style.opacity = "1";
       button.textContent = "↻ Refresh";
       $(".last-updated", card).textContent = `Updated ${new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-      toast("Account status refreshed with demo data.");
+      toast("Account status refreshed.");
     });
 
     $$("[data-alert]").forEach((button) => button.addEventListener("click", () => {
@@ -163,7 +163,7 @@
       closeSheet("help-sheet");
       toast("Tour 1 of 3: Start with the three equal smart-assistance cards.");
       setTimeout(() => toast("Tour 2 of 3: Use the bottom bar to move between workflows."), 1500);
-      setTimeout(() => toast("Tour 3 of 3: Presenter states are available from the desktop gear."), 3000);
+      setTimeout(() => toast("Tour 3 of 3: UI states are available from the desktop gear."), 3000);
     });
 
     $("#edit-profile")?.addEventListener("click", () => openSheet("profile-sheet"));
@@ -185,7 +185,7 @@
         closeSheet("profile-sheet"); toast(data.message);
       } catch (error) { toast(error.message, "error"); }
     });
-    $("#logout-button")?.addEventListener("click", () => confirmAction({ title: "Log out?", message: "You’ll return to the prototype sign-in screen.", action: "Log out", tone: "danger", onConfirm: () => $("#logout-form").submit() }));
+    $("#logout-button")?.addEventListener("click", () => confirmAction({ title: "Log out?", message: "You’ll return to the sign-in screen.", action: "Log out", tone: "danger", onConfirm: () => $("#logout-form").submit() }));
 
     let mapScale = 1;
     $$("[data-map-layer]").forEach((input) => input.addEventListener("change", () => {
@@ -199,4 +199,3 @@
     $$('[data-open-map]').forEach((button) => button.addEventListener("click", () => openSheet("map-sheet")));
   });
 })();
-

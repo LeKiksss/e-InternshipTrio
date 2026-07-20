@@ -25,12 +25,12 @@
       if (area === "network") {
         const history = $("#diagnostic-history");
         let empty = $("#demo-empty-diagnostics");
-        if (!empty) { empty = document.createElement("div"); empty.id = "demo-empty-diagnostics"; empty.className = "empty-card"; empty.innerHTML = '<div class="empty-icon">⌁</div><h3>No local history</h3><p>Run a test to add the first demonstration result.</p>'; history.append(empty); }
+        if (!empty) { empty = document.createElement("div"); empty.id = "demo-empty-diagnostics"; empty.className = "empty-card"; empty.innerHTML = '<div class="empty-icon">⌁</div><h3>No test history</h3><p>Run a test to add your first result.</p>'; history.append(empty); }
         empty.hidden = value !== "empty"; $$(".history-card", history).forEach((card) => card.hidden = value === "empty");
       }
       if (area === "bill") {
         let empty = $("#demo-empty-bills");
-        if (!empty) { empty = document.createElement("div"); empty.id = "demo-empty-bills"; empty.className = "empty-card"; empty.innerHTML = '<div class="empty-icon">▤</div><h3>No billing history</h3><p>Upload or enter a fictional bill to begin.</p>'; $(".bill-summary-card").after(empty); }
+        if (!empty) { empty = document.createElement("div"); empty.id = "demo-empty-bills"; empty.className = "empty-card"; empty.innerHTML = '<div class="empty-icon">▤</div><h3>No billing history</h3><p>Upload or enter a bill to begin.</p>'; $(".bill-summary-card").after(empty); }
         empty.hidden = value !== "empty"; $(".bill-summary-card").hidden = value === "empty";
         if (value === "anomaly") { $("#anomaly-title").textContent = "Your bill is 28% higher than usual"; $("#anomaly-copy").textContent = "Most of the increase came from roaming charges."; }
       }
@@ -42,7 +42,7 @@
       if (area === "roaming" && value !== "normal") { /* Applied by recommendation flow; selector change is intentionally non-destructive. */ }
     }
     $("[data-demo-retry]")?.addEventListener("click", () => { const control = $('[data-demo-control="dashboard"]'); control.value = "normal"; control.dispatchEvent(new Event("change")); });
-    $("#reset-demo-data").addEventListener("click", () => confirmAction({ title: "Reset demonstration data?", message: "Seeded diagnostics, bills, and complaint tickets for the demo account will be restored.", action: "Reset data", tone: "danger", onConfirm: async () => {
+    $("#reset-demo-data").addEventListener("click", () => confirmAction({ title: "Reset account data?", message: "Diagnostics, bills, and complaint tickets for the default account will be restored.", action: "Reset data", tone: "danger", onConfirm: async () => {
       try { const data = await api("/api/demo/reset", { method: "POST" }); toast(data.message); closeSheet("demo-sheet"); setTimeout(() => location.reload(), 800); } catch (error) { toast(error.message, "error"); }
     }}));
   });

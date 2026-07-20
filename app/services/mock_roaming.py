@@ -78,9 +78,9 @@ def current_usage_package(destination, trip_days):
         "sms_allowance": allowances["sms"],
         "preferred_network": "Preferred Partner 1",
         "activation_code": "*170*201#",
-        "activation_instructions": "Dial the fictional code, review the demo confirmation, then cancel or confirm. No real package is activated.",
+        "activation_instructions": "Review the activation code and confirmation screen before continuing. No package is activated automatically.",
         "why": f"Based on your recent usage, {package_name} is the closest match for your {trip_days}-day trip.",
-        "change_summary": "Initial recommendation based on current mock usage.",
+        "change_summary": "Initial recommendation based on current usage.",
         "prototype": True,
         "updated_at": datetime.now().strftime("%d %b %Y"),
     }

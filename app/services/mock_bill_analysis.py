@@ -11,7 +11,6 @@ def analyse_bill(values):
         ),
         "waste": "AED 34 in lightly used add-ons",
         "risk": "Moderate overage risk",
-        "recommended_plan": "Smart Value 425 — Demo",
+        "recommended_plan": "Smart Value 425",
         "projected_saving": 43,
     }
-

@@ -53,11 +53,11 @@
       if (generation !== runGeneration) return;
       if (demoState === "failure") {
         controller.go("landing"); runButton.disabled = false;
-        toast("The simulated test could not complete. Existing history is safe.", "error");
+        toast("The test could not complete. Existing history is safe.", "error");
         return;
       }
       try {
-        const data = await api("/api/diagnostics", { method: "POST", body: { state: demoState === "weak" ? "weak" : "strong", location: noLocation ? "Location not saved" : "Downtown Dubai — demo location" } });
+        const data = await api("/api/diagnostics", { method: "POST", body: { state: demoState === "weak" ? "weak" : "strong", location: noLocation ? "Location not saved" : "Downtown Dubai" } });
         const record = data.result;
         $("#metric-download").textContent = record.download_speed;
         $("#metric-upload").textContent = record.upload_speed;

@@ -23,7 +23,7 @@ class RegistrationForm(FlaskForm):
     phone_number = StringField("Phone number", validators=[DataRequired(), Length(min=9, max=30)])
     password = PasswordField("Password", validators=[DataRequired(), Length(max=128)])
     confirm_password = PasswordField("Confirm password", validators=[DataRequired(), EqualTo("password", message="Passwords must match.")])
-    terms = BooleanField("I agree to the prototype terms", validators=[DataRequired(message="You must accept the prototype terms.")])
+    terms = BooleanField("I agree to the terms of use", validators=[DataRequired(message="You must accept the terms of use.")])
     submit = SubmitField("Create account")
 
     def validate_email(self, field):
@@ -46,4 +46,3 @@ class RegistrationForm(FlaskForm):
 def db_func_lower(column):
     from sqlalchemy import func
     return func.lower(column)
-

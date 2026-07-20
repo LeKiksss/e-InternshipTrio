@@ -34,7 +34,7 @@
     function startComplaint(useForm = false) {
       controller.update({ reviewSource: useForm ? "form" : "chat" });
       if ((window.DemoStates?.complaints || "open") === "unavailable" && !useForm) {
-        toast("The guided assistant is unavailable in this demo state. Your structured form is ready.", "error");
+        toast("The guided assistant is unavailable. Your structured form is ready.", "error");
         controller.go("form");
       } else controller.go(useForm ? "form" : "chat");
     }
@@ -118,7 +118,7 @@
       const file = event.target.files[0]; if (!file) return;
       controller.update({ attachment: { name: file.name, status: "Analysing attachment…" } }); renderAttachment();
       await delay(window.PROTOTYPE?.testing ? 20 : 900);
-      controller.update({ attachment: { name: file.name, status: "Demo detail: service screenshot detected" } }); renderAttachment();
+      controller.update({ attachment: { name: file.name, status: "Service screenshot detected" } }); renderAttachment();
       toast("Attachment analysed locally with placeholder logic.");
     });
     function renderAttachment() {
@@ -171,7 +171,7 @@
     $("#complaint-landing").addEventListener("click", (event) => { const row = event.target.closest("[data-ticket-id]"); if (row && !row.closest("#ticket-list")) openTicket(row.dataset.ticketId); });
     $("#track-complaint").addEventListener("click", () => { const first = $("#ticket-list [data-ticket-id]"); if (first) openTicket(first.dataset.ticketId); else toast("There are no local complaint tickets to track."); });
     $$("[data-ticket-filter]").forEach((button) => button.addEventListener("click", () => { $$("[data-ticket-filter]").forEach((item) => item.classList.toggle("active", item === button)); $$(".ticket-row").forEach((row) => { const value = button.dataset.ticketFilter; row.hidden = value !== "all" && (value === "resolved" ? row.dataset.ticketStatus !== "resolved" : row.dataset.ticketStatus === "resolved"); }); }));
-    $("#add-ticket-note").addEventListener("click", () => confirmAction({ title: "Add a supporting note?", message: "A demonstration note stating that more evidence is available will be added to the ticket.", action: "Add note", onConfirm: async () => { try { const id = $("#ticket-sheet").dataset.ticketId; const data = await api(`/api/complaints/${id}/note`, { method: "POST", body: { note: "Additional supporting information is available on request." } }); $("#ticket-detail-update").textContent = data.ticket.latest_update; toast("Supporting note added locally."); } catch (error) { toast(error.message, "error"); } } }));
-    $("#close-ticket").addEventListener("click", () => confirmAction({ title: "Close this ticket?", message: "This demonstration action marks the local ticket as resolved.", action: "Close ticket", tone: "danger", onConfirm: async () => { try { const id = $("#ticket-sheet").dataset.ticketId; const data = await api(`/api/complaints/${id}/close`, { method: "POST" }); $("#ticket-detail-status").textContent = data.ticket.status; $("#ticket-detail-update").textContent = data.ticket.latest_update; toast("Ticket marked resolved in the prototype."); } catch (error) { toast(error.message, "error"); } } }));
+    $("#add-ticket-note").addEventListener("click", () => confirmAction({ title: "Add a supporting note?", message: "A note stating that more evidence is available will be added to the ticket.", action: "Add note", onConfirm: async () => { try { const id = $("#ticket-sheet").dataset.ticketId; const data = await api(`/api/complaints/${id}/note`, { method: "POST", body: { note: "Additional supporting information is available on request." } }); $("#ticket-detail-update").textContent = data.ticket.latest_update; toast("Supporting note added."); } catch (error) { toast(error.message, "error"); } } }));
+    $("#close-ticket").addEventListener("click", () => confirmAction({ title: "Close this ticket?", message: "This marks the ticket as resolved.", action: "Close ticket", tone: "danger", onConfirm: async () => { try { const id = $("#ticket-sheet").dataset.ticketId; const data = await api(`/api/complaints/${id}/close`, { method: "POST" }); $("#ticket-detail-status").textContent = data.ticket.status; $("#ticket-detail-update").textContent = data.ticket.latest_update; toast("Ticket marked as resolved."); } catch (error) { toast(error.message, "error"); } } }));
   });
 })();

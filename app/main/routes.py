@@ -95,7 +95,7 @@ def save_diagnostic():
     payload = request.get_json(silent=True) or {}
     state = payload.get("state", "strong")
     if state == "failure":
-        return jsonify({"ok": False, "message": "The simulated test could not complete. Your existing results are safe."}), 503
+        return jsonify({"ok": False, "message": "The connection test could not complete. Your existing results are safe."}), 503
     result = result_for_state("weak" if state == "weak" else "strong")
     row = DiagnosticResult(user_id=current_user.id, location_label=payload.get("location") or "Location not saved", **result)
     db.session.add(row)
@@ -137,7 +137,7 @@ def create_complaint():
     if len(summary) < 10:
         return jsonify({"ok": False, "message": "Please add a little more detail before submitting."}), 400
     if payload.get("simulate_failure"):
-        return jsonify({"ok": False, "message": "Submission is unavailable in this demo state. Your details remain on screen."}), 503
+        return jsonify({"ok": False, "message": "Submission is temporarily unavailable. Your details remain on screen."}), 503
     diagnosis = classify_complaint(summary, payload.get("category"))
     sequence = ComplaintTicket.query.count() + 142
     row = ComplaintTicket(
@@ -184,7 +184,7 @@ def complaint_note(ticket_id):
 def close_complaint(ticket_id):
     row = ComplaintTicket.query.filter_by(id=ticket_id, user_id=current_user.id).first_or_404()
     row.status = "Resolved"
-    row.latest_update = "Ticket closed by the customer in the prototype."
+    row.latest_update = "Ticket closed by the customer."
     db.session.commit()
     return jsonify({"ok": True, "ticket": row.to_dict()})
 
@@ -197,14 +197,14 @@ def roaming_recommend():
     if not destination:
         return jsonify({"ok": False, "message": "Choose a destination first."}), 400
     if payload.get("simulate") == "database":
-        return jsonify({"ok": False, "message": "The fictional package catalogue is temporarily unavailable."}), 503
+        return jsonify({"ok": False, "message": "The package catalogue is temporarily unavailable."}), 503
     package = recommend_package(
         RoamingPackage.query.filter_by(active=True).all(), destination,
         int(payload.get("duration") or 1), payload.get("requirements") or "",
         payload.get("rejected_ids") or [],
     )
     if not package:
-        return jsonify({"ok": False, "message": "No additional fictional package matches this trip."}), 404
+        return jsonify({"ok": False, "message": "No additional package matches this trip."}), 404
     result = package.to_dict()
     result["destination"] = destination
     result["why"] = package.notes
@@ -318,7 +318,7 @@ def update_profile():
         return jsonify({"ok": False, "message": "Enter a valid name and UAE mobile number."}), 400
     duplicate = User.query.filter(User.phone_number == phone, User.id != current_user.id).first()
     if duplicate:
-        return jsonify({"ok": False, "message": "That phone number belongs to another prototype account."}), 400
+        return jsonify({"ok": False, "message": "That phone number belongs to another account."}), 400
     current_user.full_name = name
     current_user.phone_number = phone
     current_user.notification_preferences = payload.get("notification_preferences") or current_user.notification_preferences
@@ -331,7 +331,7 @@ def update_profile():
 @login_required
 def reset_demo():
     if current_user.email != "demo@prototype.local":
-        return jsonify({"ok": False, "message": "Reset is available for the seeded demonstration account only."}), 400
+        return jsonify({"ok": False, "message": "Reset is available for the default account only."}), 400
     DiagnosticResult.query.filter_by(user_id=current_user.id).delete()
     BillRecord.query.filter_by(user_id=current_user.id).delete()
     ComplaintTicket.query.filter_by(user_id=current_user.id).delete()
@@ -340,4 +340,4 @@ def reset_demo():
     session.pop("saved_roaming_recommendations", None)
     session.modified = True
     seed_database()
-    return jsonify({"ok": True, "message": "Demonstration data has been restored."})
+    return jsonify({"ok": True, "message": "Account data has been restored."})

@@ -14,6 +14,12 @@ def open_screen(page, name):
     expect(page.locator(f'.screen[data-screen="{name}"]')).to_be_visible()
 
 
+def assert_clean_visible_copy(page):
+    visible_copy = page.locator("body").inner_text().lower()
+    for label in ("demo", "prototype", "fictional", "proof of concept"):
+        assert label not in visible_copy
+
+
 def complete_network_test(page, location_choice):
     page.locator("#run-speed-test").click()
     expect(page.locator("#location-sheet")).to_be_visible()
@@ -23,12 +29,16 @@ def complete_network_test(page, location_choice):
 
 def test_demo_identity_and_repeatable_network_and_bill(page, live_app_url):
     login_demo(page, live_app_url)
+    assert_clean_visible_copy(page)
 
     open_screen(page, "profile")
-    expect(page.locator("#profile-name-display")).to_have_text("Prototype Demo User")
+    expect(page.locator("#profile-name-display")).to_have_text("Customer Account")
+    expect(page.locator("#profile-email")).to_have_value("account@example.com")
     expect(page.locator("#profile-phone")).to_have_value("+971501234567")
+    assert_clean_visible_copy(page)
 
     open_screen(page, "network-bill")
+    assert_clean_visible_copy(page)
     complete_network_test(page, "allow")
     page.locator("#network-done").click()
     expect(page.locator("#network-latest-result")).to_be_visible()
@@ -41,16 +51,16 @@ def test_demo_identity_and_repeatable_network_and_bill(page, live_app_url):
     page.locator('[data-bill-mode="upload"]').click()
     page.locator("#bill-file").set_input_files(
         {
-            "name": "fictional-demo-bill.pdf",
+            "name": "july-bill.pdf",
             "mimeType": "application/pdf",
-            "buffer": b"%PDF-1.4 fictional prototype bill",
+            "buffer": b"%PDF-1.4 customer bill",
         }
     )
-    expect(page.locator("#bill-filename")).to_have_text("fictional-demo-bill.pdf")
+    expect(page.locator("#bill-filename")).to_have_text("july-bill.pdf")
     page.locator("#bill-upload-flow [data-bill-back]").click()
     expect(page.locator("#bill-input-choice")).to_be_visible()
     page.locator('[data-bill-mode="upload"]').click()
-    expect(page.locator("#bill-filename")).to_have_text("fictional-demo-bill.pdf")
+    expect(page.locator("#bill-filename")).to_have_text("july-bill.pdf")
     page.locator("#parse-bill").click()
     expect(page.locator("#bill-fields")).to_be_visible()
 
@@ -86,19 +96,20 @@ def test_demo_identity_and_repeatable_network_and_bill(page, live_app_url):
 def test_complaint_back_state_and_second_request(page, live_app_url):
     login_demo(page, live_app_url)
     open_screen(page, "complaints")
+    assert_clean_visible_copy(page)
 
     page.locator("#start-complaint").click()
     page.locator("#consent-form").click()
     page.locator("#complaint-description").fill(
-        "Prototype billing amount is incorrect on the fictional July statement."
+        "The billing amount is incorrect on the July statement."
     )
     page.locator("#complaint-category").select_option(label="Billing")
-    page.locator("#complaint-location").fill("Demo location")
+    page.locator("#complaint-location").fill("Dubai")
     page.locator('#complaint-form button[type="submit"]').click()
     expect(page.locator("#diagnosis-view")).to_be_visible()
     page.locator("#edit-complaint").click()
     expect(page.locator("#complaint-description")).to_have_value(
-        "Prototype billing amount is incorrect on the fictional July statement."
+        "The billing amount is incorrect on the July statement."
     )
     page.locator('#complaint-form button[type="submit"]').click()
     page.locator("#submit-complaint").click()
@@ -109,15 +120,15 @@ def test_complaint_back_state_and_second_request(page, live_app_url):
     page.locator("#start-complaint").click()
     page.locator("#consent-chat").click()
     page.locator("#complaint-input").fill(
-        "The fictional mobile data service disconnects in the prototype."
+        "The mobile data service disconnects several times each day."
     )
     page.locator("#send-complaint-message").click()
     page.locator("#complaint-chat-back").click()
     expect(page.locator("#complaint-input")).to_have_value(
-        "The fictional mobile data service disconnects in the prototype."
+        "The mobile data service disconnects several times each day."
     )
     page.locator("#complaint-input").fill(
-        "The fictional mobile data service repeatedly disconnects in the prototype."
+        "The mobile data service repeatedly disconnects throughout the day."
     )
     page.locator("#send-complaint-message").click()
     for reply in ("Network", "Today", "Dubai", "Still happening", "Unable to use service"):
@@ -132,7 +143,8 @@ def test_complaint_back_state_and_second_request(page, live_app_url):
 def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_url):
     login_demo(page, live_app_url)
     open_screen(page, "roaming")
-    expect(page.locator("#roaming-title")).to_have_text("Roam Like Home")
+    expect(page.locator("#roaming-title")).to_have_text("Roaming Recommender")
+    assert_clean_visible_copy(page)
 
     start = date.today() + timedelta(days=2)
     end_nine_days = start + timedelta(days=8)
@@ -174,8 +186,9 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#trip-days")).to_have_text("9")
     page.locator("#dates-next").click()
 
-    expect(page.get_by_role("heading", name="Recommended plan based on your current usage")).to_be_visible()
+    expect(page.locator('[data-testid="current-usage-recommendation"]')).to_be_visible()
     expect(page.locator(".recommender-identity strong")).to_have_text("Roam Like Home")
+    assert_clean_visible_copy(page)
     expect(page.locator("#usage-package-name")).to_have_text("Travel Connect")
     layout = page.evaluate(
         """() => {
@@ -209,6 +222,7 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
 
     page.locator("#continue-roaming-plan").click()
     expect(page.locator('[data-testid="final-roaming-recommendation"]')).to_be_visible()
+    assert_clean_visible_copy(page)
     expect(page.locator("#package-name")).to_have_text("Data Max Abroad")
     expect(page.locator('[data-testid="carrier-acknowledgement"]')).to_be_visible()
     expect(page.locator("#carrier-note-network")).to_have_text("Preferred Partner 1")

@@ -97,7 +97,7 @@
       const network = pkg.preferred_network || "Preferred Partner 1";
       $("#package-destination").textContent = controller.state.destination; $("#package-trip-duration").textContent = `${controller.state.duration} days`; $("#package-network").textContent = network; $("#package-why").textContent = pkg.why;
       $("#carrier-note-network").textContent = network; $("#carrier-ack-network-label").textContent = network;
-      $("#package-updated").textContent = `Prototype catalogue updated ${pkg.updated_at || "today"}`; $("#activation-code").textContent = pkg.activation_code; $("#activation-instructions").textContent = pkg.activation_instructions;
+      $("#package-updated").textContent = `Catalogue updated ${pkg.updated_at || "today"}`; $("#activation-code").textContent = pkg.activation_code; $("#activation-instructions").textContent = pkg.activation_instructions;
       $("#final-trip-dates").textContent = `${controller.state.destination} · ${formatDate(controller.state.start)} to ${formatDate(controller.state.end)} · ${controller.state.duration} days`;
       renderAcknowledgement();
     }
@@ -220,7 +220,7 @@
       try { await navigator.clipboard.writeText(code); } catch {
         const area = document.createElement("textarea"); area.value = code; document.body.append(area); area.select(); document.execCommand("copy"); area.remove();
       }
-      button.textContent = "Copied"; toast("Fictional activation code copied.");
+      button.textContent = "Copied"; toast("Activation code copied.");
       setTimeout(() => button.textContent = "Copy code", 1500);
     });
     $("#open-dialer").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) { toast("Acknowledge the preferred-carrier note before opening the dialer.", "error"); return; } confirmAction({ title: "Open your dialer?", message: "The fictional code will be placed in the dialer where supported. No package will be activated automatically.", action: "Open dialer", onConfirm: () => { window.location.href = `tel:${$("#activation-code").textContent.replace(/#/g, "%23")}`; } }); });

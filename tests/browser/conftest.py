@@ -64,6 +64,9 @@ def page(browser):
 
 def login_demo(page, live_app_url):
     page.goto(live_app_url)
+    visible_copy = page.locator("body").inner_text().lower()
+    for label in ("demo", "prototype", "fictional", "proof of concept"):
+        assert label not in visible_copy
     page.locator("#identity").fill("demo@prototype.local")
     page.locator("#password").fill("Demo123!")
     page.locator('input[type="submit"]').click()
