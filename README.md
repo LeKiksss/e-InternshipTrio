@@ -45,7 +45,7 @@ This distinction is important when extracting code for another project.
 | Network | Repeatable animated tests, controlled Back/Done/Run Another actions, optional location, saved history, deletion, map layers, and zoom | No real speed test, GPS lookup, network API, or map service |
 | Bills | Repeatable upload/manual flows, preserved draft fields, saved bill records, charts, anomaly and recommendation UI | Uploaded-file metadata is retained for the draft; files, OCR, and analysis are simulated |
 | Complaints | Repeatable guided chat and form flows, editable preserved answers, saved tickets, notes, timeline, and closing | Assistant classification uses local rules; no LLM or complaint-system integration |
-| Roaming | Four-step flow, duration-scaled usage, comparative adjustments, session saves, duplicate protection, viewing, and removal | Packages, networks, prices, activation codes, and dialer actions are fictional |
+| Roaming | “Roam Like Home” recommender, distinct fictional package names, duration-scaled usage, comparative adjustments, carrier acknowledgement, session saves, viewing, and removal | Packages, partner networks, prices, activation codes, and dialer actions are fictional |
 | Profile | Persisted name, phone, notification preference, and contact-method edits | Demo plan and linked activity summaries are fictional |
 | Presenter controls | Immediate switching between normal, loading, error, empty, and success states | State changes do not represent live service conditions |
 
@@ -53,7 +53,7 @@ This distinction is important when extracting code for another project.
 
 - **Network & Bill Intelligence** - diagnostic simulation, local history, fictional coverage map, bill entry, simulated parsing, spending chart, anomaly explanation, and plan recommendation.
 - **Complaint Intelligence** - privacy consent, deterministic guided chat, structured-form fallback, preliminary diagnosis, local ticket creation, history, notes, and tracking timeline.
-- **Roaming Package Advisor** - searchable destinations, validated travel dates, automatic current-usage recommendation, deterministic comparative adjustments, activation guidance, and session-only saved recommendations.
+- **Roam Like Home recommender** - searchable destinations, validated travel dates, automatic current-usage package selection, deterministic comparative adjustments, preferred-carrier acknowledgement before activation, and session-only saved recommendations.
 - **Shared experience** - account dashboard, profile, help, notifications, responsive phone/expanded modes, accessibility states, toasts, sheets, and presenter controls.
 
 ## Project structure and responsibilities

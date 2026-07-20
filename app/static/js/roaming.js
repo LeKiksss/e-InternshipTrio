@@ -12,7 +12,8 @@
       name: "roaming",
       initialState: {
         destination: "", start: "", end: "", duration: 0, usage: null, basePackage: null,
-        currentPackage: null, chat: [], rejectedIds: [], savedId: null, completed: false, viewingSaved: false,
+        currentPackage: null, chat: [], rejectedIds: [], savedId: null, completed: false,
+        viewingSaved: false, carrierAcknowledged: false,
       },
       render(view, state) {
         intro.hidden = view !== "landing";
@@ -42,10 +43,11 @@
       $("#trip-duration").hidden = !state.duration; $("#trip-days").textContent = state.duration || 0;
       $("#dates-next").disabled = !state.duration;
       const save = $("#save-recommendation"); save.textContent = state.savedId ? "Saved" : "Save Selection"; save.disabled = Boolean(state.savedId);
+      renderAcknowledgement();
     }
     function selectCountry(country) {
       const changed = controller.state.destination && controller.state.destination !== country;
-      controller.update({ destination: country, ...(changed ? { usage: null, basePackage: null, currentPackage: null, chat: [], rejectedIds: [], savedId: null, completed: false } : {}) });
+      controller.update({ destination: country, ...(changed ? { usage: null, basePackage: null, currentPackage: null, chat: [], rejectedIds: [], savedId: null, completed: false, carrierAcknowledged: false } : {}) });
       restoreInputs();
     }
     function validateDates({ update = true } = {}) {
@@ -55,7 +57,7 @@
       if (start < today || end < start) { error.hidden = false; error.textContent = end < start ? "Return date must be on or after the departure date." : "Choose travel dates in the future."; $("#dates-next").disabled = true; $("#trip-duration").hidden = true; return false; }
       const duration = Math.round((end - start) / 86400000) + 1;
       const changed = controller.state.start !== startValue || controller.state.end !== endValue;
-      if (update) controller.update({ start: startValue, end: endValue, duration, ...(changed ? { usage: null, basePackage: null, currentPackage: null, chat: [], rejectedIds: [], savedId: null, completed: false } : {}) });
+      if (update) controller.update({ start: startValue, end: endValue, duration, ...(changed ? { usage: null, basePackage: null, currentPackage: null, chat: [], rejectedIds: [], savedId: null, completed: false, carrierAcknowledged: false } : {}) });
       $("#trip-days").textContent = duration; $("#trip-duration").hidden = false; error.hidden = true; $("#dates-next").disabled = false; return true;
     }
 
@@ -66,7 +68,7 @@
       for (const phase of phases) { $("#roaming-phase").textContent = phase; await delay(window.PROTOTYPE?.testing ? 25 : 360); }
       try {
         const response = await api("/api/roaming/current-usage", { method: "POST", body: { destination: controller.state.destination, start_date: controller.state.start, end_date: controller.state.end } });
-        controller.update({ duration: response.trip_days, usage: response.usage, basePackage: response.package, currentPackage: response.package, chat: [], rejectedIds: [], savedId: null, viewingSaved: false });
+        controller.update({ duration: response.trip_days, usage: response.usage, basePackage: response.package, currentPackage: response.package, chat: [], rejectedIds: [], savedId: null, viewingSaved: false, carrierAcknowledged: false });
         controller.go("step3");
       } catch (error) { controller.go("step2"); toast(error.message, "error"); }
     }
@@ -88,9 +90,21 @@
       const pkg = controller.state.currentPackage; if (!pkg) return;
       $("#package-name").textContent = pkg.name; $("#package-price").textContent = Number(pkg.price).toFixed(0); $("#package-validity").textContent = `${pkg.validity_days} days`;
       $("#package-data").textContent = pkg.data_allowance; $("#package-voice").textContent = `${pkg.local_minutes} min`; $("#package-international").textContent = `${pkg.international_minutes} min`; $("#package-sms").textContent = pkg.sms_allowance;
-      $("#package-destination").textContent = controller.state.destination; $("#package-trip-duration").textContent = `${controller.state.duration} days`; $("#package-network").textContent = pkg.preferred_network; $("#package-why").textContent = pkg.why;
+      const network = pkg.preferred_network || "Preferred Partner 1";
+      $("#package-destination").textContent = controller.state.destination; $("#package-trip-duration").textContent = `${controller.state.duration} days`; $("#package-network").textContent = network; $("#package-why").textContent = pkg.why;
+      $("#carrier-note-network").textContent = network; $("#carrier-ack-network-label").textContent = network;
       $("#package-updated").textContent = `Prototype catalogue updated ${pkg.updated_at || "today"}`; $("#activation-code").textContent = pkg.activation_code; $("#activation-instructions").textContent = pkg.activation_instructions;
       $("#final-trip-dates").textContent = `${controller.state.destination} · ${formatDate(controller.state.start)} to ${formatDate(controller.state.end)} · ${controller.state.duration} days`;
+      renderAcknowledgement();
+    }
+    function renderAcknowledgement() {
+      const acknowledged = Boolean(controller.state.carrierAcknowledged);
+      $("#carrier-acknowledgement").checked = acknowledged;
+      $("#activation-card").classList.toggle("locked", !acknowledged);
+      $("#activation-code").setAttribute("aria-hidden", String(!acknowledged));
+      $("#copy-code").disabled = !acknowledged;
+      $("#open-dialer").disabled = !acknowledged;
+      $("#roaming-done").disabled = !acknowledged;
     }
     function renderChat() {
       const container = $("#roaming-chat-messages"); container.innerHTML = "";
@@ -115,7 +129,7 @@
         const response = await api("/api/roaming/adjust", { method: "POST", body: { destination: controller.state.destination, trip_days: controller.state.duration, message: value } });
         const updatedChat = [...controller.state.chat.slice(0, -1), { who: "assistant", text: response.package.change_summary }];
         const rejected = controller.state.currentPackage ? [...controller.state.rejectedIds, controller.state.currentPackage.id] : controller.state.rejectedIds;
-        controller.update({ currentPackage: response.package, chat: updatedChat, rejectedIds: rejected, savedId: null, completed: false }); renderUsageRecommendation(); renderChat(); toast("Recommendation updated.");
+        controller.update({ currentPackage: response.package, chat: updatedChat, rejectedIds: rejected, savedId: null, completed: false, carrierAcknowledged: false }); renderUsageRecommendation(); renderChat(); toast("Recommendation updated.");
       } catch (error) {
         const updatedChat = [...controller.state.chat.slice(0, -1), { who: "assistant", text: error.message }]; controller.update({ chat: updatedChat }); renderChat(); toast(error.message, "error");
       }
@@ -125,7 +139,7 @@
       const pkg = controller.state.currentPackage; if (!pkg) return;
       try {
         const response = await api("/api/roaming/saved", { method: "POST", body: {
-          package_id: pkg.id, package_name: pkg.name, destination: controller.state.destination,
+          package_id: pkg.id, package_name: pkg.name, recommendation_name: pkg.recommendation_name || "Roam Like Home", destination: controller.state.destination,
           start_date: controller.state.start, end_date: controller.state.end, trip_days: controller.state.duration,
           price: pkg.price, currency: pkg.currency || "AED", validity_days: pkg.validity_days,
           data_allowance: pkg.data_allowance, local_minutes: pkg.local_minutes,
@@ -152,12 +166,12 @@
     function escapeHTML(value) { const node = document.createElement("div"); node.textContent = value ?? ""; return node.innerHTML; }
     function viewSaved(saved) {
       controller.update({ destination: saved.destination, start: saved.start_date, end: saved.end_date, duration: Number(saved.trip_days), currentPackage: {
-        id: saved.package_id, name: saved.package_name, price: saved.price, currency: saved.currency,
+        id: saved.package_id, name: saved.package_name, recommendation_name: saved.recommendation_name || "Roam Like Home", price: saved.price, currency: saved.currency,
         validity_days: saved.validity_days, data_allowance: saved.data_allowance, local_minutes: saved.local_minutes,
         international_minutes: saved.international_minutes, sms_allowance: saved.sms_allowance,
         preferred_network: saved.preferred_network, activation_code: saved.activation_code,
         activation_instructions: saved.activation_instructions, why: saved.explanation, updated_at: saved.saved_at,
-      }, savedId: saved.saved_id, viewingSaved: true, completed: true }); controller.go("result");
+      }, savedId: saved.saved_id, viewingSaved: true, completed: true, carrierAcknowledged: false }); controller.go("result");
     }
 
     $("#start-roaming").addEventListener("click", async () => { if (controller.state.completed) await controller.reset(); controller.go("step1"); });
@@ -173,14 +187,27 @@
     $(".adjustment-chips").addEventListener("click", (event) => { const button = event.target.closest("button"); if (button) submitAdjustment(button.textContent); });
     $("#send-roaming-adjustment").addEventListener("click", () => submitAdjustment());
     $("#roaming-adjustment").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submitAdjustment(); } });
+    $("#carrier-acknowledgement").addEventListener("change", (event) => {
+      controller.update({ carrierAcknowledged: event.currentTarget.checked });
+      renderAcknowledgement();
+      if (event.currentTarget.checked) toast("Carrier note acknowledged. Activation details are now available.");
+    });
     $("#continue-roaming-plan").addEventListener("click", () => { controller.update({ completed: true, viewingSaved: false }); controller.go("result"); });
     $("#roaming-result-back").addEventListener("click", () => controller.go(controller.state.viewingSaved ? "landing" : "step3"));
     $("#save-recommendation").addEventListener("click", saveSelection);
-    $("#roaming-done").addEventListener("click", () => { controller.update({ completed: true }); controller.go("landing"); });
+    $("#roaming-done").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) { toast("Acknowledge the preferred-carrier note before finishing.", "error"); return; } controller.update({ completed: true }); controller.go("landing"); });
     $("#start-over-roaming").addEventListener("click", async () => { await controller.reset(); $("#country-search").value = ""; $$("#country-list button").forEach((button) => { button.hidden = false; button.classList.remove("selected"); }); controller.go("step1", { replace: true }); });
     $("#view-recent-roaming").addEventListener("click", () => { if (controller.state.currentPackage) controller.go("result"); });
     $("#saved-recommendations-list").addEventListener("click", (event) => { const card = event.target.closest(".saved-roaming-card"); if (!card) return; if (event.target.closest("[data-view-saved]")) viewSaved(card._recommendation); if (event.target.closest("[data-remove-saved]")) confirmAction({ title: "Remove saved recommendation?", message: "This removes the session-only saved card. Your completed trip history is unchanged.", action: "Remove", tone: "danger", onConfirm: async () => { try { const response = await api(`/api/roaming/saved/${card.dataset.savedId}`, { method: "DELETE" }); renderSavedRecommendations(response.recommendations); if (controller.state.savedId === card.dataset.savedId) controller.update({ savedId: null }); toast("Saved recommendation removed."); } catch (error) { toast(error.message, "error"); } } }); });
-    $("#copy-code").addEventListener("click", async (event) => { const code = $("#activation-code").textContent; try { await navigator.clipboard.writeText(code); } catch { const area = document.createElement("textarea"); area.value = code; document.body.append(area); area.select(); document.execCommand("copy"); area.remove(); } const button = event.currentTarget; button.textContent = "Copied"; toast("Fictional activation code copied."); setTimeout(() => button.textContent = "Copy code", 1500); });
-    $("#open-dialer").addEventListener("click", () => confirmAction({ title: "Open your dialer?", message: "The fictional code will be placed in the dialer where supported. No package will be activated automatically.", action: "Open dialer", onConfirm: () => { window.location.href = `tel:${$("#activation-code").textContent.replace(/#/g, "%23")}`; } }));
+    $("#copy-code").addEventListener("click", async (event) => {
+      if (!controller.state.carrierAcknowledged) { toast("Acknowledge the preferred-carrier note before copying the code.", "error"); return; }
+      const button = event.currentTarget, code = $("#activation-code").textContent;
+      try { await navigator.clipboard.writeText(code); } catch {
+        const area = document.createElement("textarea"); area.value = code; document.body.append(area); area.select(); document.execCommand("copy"); area.remove();
+      }
+      button.textContent = "Copied"; toast("Fictional activation code copied.");
+      setTimeout(() => button.textContent = "Copy code", 1500);
+    });
+    $("#open-dialer").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) { toast("Acknowledge the preferred-carrier note before opening the dialer.", "error"); return; } confirmAction({ title: "Open your dialer?", message: "The fictional code will be placed in the dialer where supported. No package will be activated automatically.", action: "Open dialer", onConfirm: () => { window.location.href = `tel:${$("#activation-code").textContent.replace(/#/g, "%23")}`; } }); });
   });
 })();

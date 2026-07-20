@@ -7,6 +7,7 @@ MONTHLY_USAGE = {
     "international_minutes": 180,
     "sms": 60,
 }
+RECOMMENDER_NAME = "Roam Like Home"
 
 
 def calculate_trip_days(start_date, end_date, today=None):
@@ -60,9 +61,11 @@ def current_usage_package(destination, trip_days):
     validity = _validity_tier(trip_days)
     allowances = _allowances_for_validity(validity)
     price = round(220 * max(1, validity / 10))
+    package_name = "Travel Connect" if validity <= 10 else "Global Explorer" if validity <= 14 else "Global Explorer Extended"
     return {
-        "id": f"roam-like-home-{validity}",
-        "name": "Roam Like Home",
+        "id": f"travel-connect-{validity}",
+        "recommendation_name": RECOMMENDER_NAME,
+        "name": package_name,
         "destination": destination,
         "price": price,
         "currency": "AED",
@@ -73,10 +76,10 @@ def current_usage_package(destination, trip_days):
         "voice_minutes": allowances["local_minutes"],
         "international_minutes": allowances["international_minutes"],
         "sms_allowance": allowances["sms"],
-        "preferred_network": "Demo Partner Network",
+        "preferred_network": "Preferred Partner 1",
         "activation_code": "*170*201#",
         "activation_instructions": "Dial the fictional code, review the demo confirmation, then cancel or confirm. No real package is activated.",
-        "why": f"Based on your recent usage, Roam Like Home is the closest match for your {trip_days}-day trip.",
+        "why": f"Based on your recent usage, {package_name} is the closest match for your {trip_days}-day trip.",
         "change_summary": "Initial recommendation based on current mock usage.",
         "prototype": True,
         "updated_at": datetime.now().strftime("%d %b %Y"),
@@ -114,7 +117,7 @@ def adjusted_package(intent, destination, trip_days):
 
     variants = {
         "cheaper": {
-            "id": f"roam-like-home-lite-{validity}", "name": "Roam Like Home Lite",
+            "id": f"travel-data-lite-{validity}", "name": "Travel Data Lite",
             "price": round(base["price"] * 0.72), "data_gb": max(4, round(base["data_gb"] * 0.55)),
             "local_minutes": max(60, round(base["local_minutes"] * 0.45)),
             "international_minutes": max(20, round(base["international_minutes"] * 0.35)),
@@ -122,21 +125,21 @@ def adjusted_package(intent, destination, trip_days):
             "change_summary": "Reduced the price by lowering the included data and call allowances.",
         },
         "less_data": {
-            "id": f"roam-like-home-lite-{validity}", "name": "Roam Like Home Lite",
+            "id": f"travel-data-lite-{validity}", "name": "Travel Data Lite",
             "price": round(base["price"] * 0.78), "data_gb": max(4, round(base["data_gb"] * 0.5)),
             "local_minutes": base["local_minutes"], "international_minutes": base["international_minutes"],
             "sms_allowance": base["sms_allowance"],
             "change_summary": "Reduced the data allowance for a lighter, messaging-focused trip.",
         },
         "more_data": {
-            "id": f"roam-like-home-data-plus-{validity}", "name": "Roam Like Home Data+",
+            "id": f"data-max-abroad-{validity}", "name": "Data Max Abroad",
             "price": round(base["price"] * 1.28), "data_gb": round(base["data_gb"] * 2.2),
             "local_minutes": base["local_minutes"], "international_minutes": base["international_minutes"],
             "sms_allowance": base["sms_allowance"],
             "change_summary": "Increased the data allowance for streaming, video, or hotspot use.",
         },
         "more_calls": {
-            "id": f"roam-like-home-voice-plus-{validity}", "name": "Roam Like Home Voice+",
+            "id": f"voice-traveller-{validity}", "name": "Voice Traveller",
             "price": round(base["price"] * 1.22), "data_gb": base["data_gb"],
             "local_minutes": round(base["local_minutes"] * 2.5),
             "international_minutes": round(base["international_minutes"] * 1.8),
@@ -144,7 +147,7 @@ def adjusted_package(intent, destination, trip_days):
             "change_summary": "Increased local and roaming voice minutes for more frequent calls.",
         },
         "fewer_calls": {
-            "id": f"roam-like-home-data-lite-{validity}", "name": "Roam Like Home Data+",
+            "id": f"data-max-abroad-{validity}", "name": "Data Max Abroad",
             "price": round(base["price"] * 0.92), "data_gb": round(base["data_gb"] * 1.4),
             "local_minutes": max(20, round(base["local_minutes"] * 0.2)),
             "international_minutes": max(10, round(base["international_minutes"] * 0.15)),
@@ -152,7 +155,7 @@ def adjusted_package(intent, destination, trip_days):
             "change_summary": "Shifted value from voice minutes into data for a low-call trip.",
         },
         "more_international": {
-            "id": f"roam-like-home-international-{validity}", "name": "Roam Like Home Voice+",
+            "id": f"voice-traveller-{validity}", "name": "Voice Traveller",
             "price": round(base["price"] * 1.25), "data_gb": base["data_gb"],
             "local_minutes": base["local_minutes"],
             "international_minutes": round(base["international_minutes"] * 3),
@@ -160,7 +163,7 @@ def adjusted_package(intent, destination, trip_days):
             "change_summary": "Added more international minutes for calls home and overseas calls.",
         },
         "longer": {
-            "id": f"roam-like-home-extended-{max(30, trip_days)}", "name": "Roam Like Home Extended",
+            "id": f"global-explorer-{max(30, trip_days)}", "name": "Global Explorer",
             "price": round(base["price"] * 1.35), "validity_days": max(30, trip_days),
             "data_gb": round(base["data_gb"] * 1.5),
             "local_minutes": round(base["local_minutes"] * 1.5),

@@ -64,8 +64,12 @@ def test_package_variants_change_the_expected_allowance():
     cheaper = adjusted_package("cheaper", "Canada", 9)
     data = adjusted_package("more_data", "Canada", 9)
     voice = adjusted_package("more_calls", "Canada", 9)
-    assert base["name"] == "Roam Like Home"
+    assert base["recommendation_name"] == "Roam Like Home"
+    assert base["name"] == "Travel Connect"
     assert base["validity_days"] >= 9
+    assert cheaper["name"] == "Travel Data Lite"
+    assert data["name"] == "Data Max Abroad"
+    assert voice["name"] == "Voice Traveller"
     assert cheaper["price"] < base["price"]
     assert data["data_gb"] > base["data_gb"]
     assert voice["local_minutes"] > base["local_minutes"]

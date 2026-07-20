@@ -11,7 +11,7 @@ def test_authenticated_sections_render(client):
     login_demo(client)
     response = client.get("/app")
     assert response.status_code == 200
-    for text in (b"Network &amp; bill", b"Complaint intelligence", b"Roaming advisor", b"Profile"):
+    for text in (b"Network &amp; bill", b"Complaint intelligence", b"Roam Like Home", b"Profile"):
         assert text in response.data
 
 
@@ -63,7 +63,8 @@ def test_current_usage_and_adjustment_endpoints(client):
     assert result.status_code == 200
     assert result.json["trip_days"] == 9
     assert result.json["usage"]["data_gb"] == 7.2
-    assert result.json["package"]["name"] == "Roam Like Home"
+    assert result.json["package"]["recommendation_name"] == "Roam Like Home"
+    assert result.json["package"]["name"] == "Travel Connect"
     adjusted = client.post("/api/roaming/adjust", json={"destination": "Canada", "trip_days": 9, "message": "That is too expensive"})
     assert adjusted.status_code == 200
     assert adjusted.json["package"]["price"] < result.json["package"]["price"]
@@ -74,7 +75,8 @@ def test_current_usage_and_adjustment_endpoints(client):
 def test_session_recommendation_save_duplicate_remove_and_logout_clear(client):
     login_demo(client)
     payload = {
-        "package_id": "roam-like-home-10", "package_name": "Roam Like Home",
+        "package_id": "travel-connect-10", "package_name": "Travel Connect",
+        "recommendation_name": "Roam Like Home",
         "destination": "Canada", "start_date": "2030-08-01", "end_date": "2030-08-09",
         "trip_days": 9, "price": 220, "currency": "AED", "validity_days": 10,
         "data_allowance": "10 GB", "local_minutes": 200, "international_minutes": 100,

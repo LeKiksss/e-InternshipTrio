@@ -265,7 +265,7 @@ def save_roaming_recommendation():
     if any(not payload.get(field) for field in required):
         return jsonify({"ok": False, "message": "The recommendation is incomplete and could not be saved."}), 400
     allowed = (
-        "package_id", "package_name", "destination", "start_date", "end_date", "trip_days",
+        "package_id", "package_name", "recommendation_name", "destination", "start_date", "end_date", "trip_days",
         "price", "currency", "validity_days", "data_allowance", "local_minutes",
         "international_minutes", "sms_allowance", "preferred_network", "activation_code",
         "activation_instructions", "explanation",

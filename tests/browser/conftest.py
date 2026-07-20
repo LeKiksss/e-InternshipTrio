@@ -44,7 +44,7 @@ def page(browser):
     )
     page = context.new_page()
     errors = []
-    page.on("pageerror", lambda error: errors.append(f"page error: {error}"))
+    page.on("pageerror", lambda error: errors.append(f"page error: {getattr(error, 'stack', error)}"))
     page.on(
         "console",
         lambda message: errors.append(f"console error: {message.text}")
