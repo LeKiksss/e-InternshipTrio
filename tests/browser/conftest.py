@@ -71,3 +71,4 @@ def login_demo(page, live_app_url):
     page.locator("#password").fill("Demo123!")
     page.locator('input[type="submit"]').click()
     page.locator(".app-shell").wait_for(state="visible")
+    page.wait_for_function("() => typeof window.App?.navigate === 'function'")
