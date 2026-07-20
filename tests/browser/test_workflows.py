@@ -139,6 +139,34 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     end_seven_days = start + timedelta(days=6)
 
     page.locator("#start-roaming").click()
+    country_snapshot = page.locator("#country-list").evaluate(
+        """(list) => ({
+          letters: [...list.querySelectorAll('.country-letter')].map((item) => item.textContent.trim()),
+          countries: [...list.querySelectorAll('button[data-country]')].map((item) => item.dataset.country),
+          letterTags: [...list.querySelectorAll('.country-letter')].map((item) => item.tagName),
+        })"""
+    )
+    assert len(country_snapshot["countries"]) == 32
+    assert country_snapshot["countries"] == sorted(country_snapshot["countries"])
+    assert country_snapshot["letters"] == sorted(country_snapshot["letters"])
+    assert all(tag != "BUTTON" for tag in country_snapshot["letterTags"])
+    expect(page.locator("#country-count")).to_have_text("32 countries")
+    page.locator("#country-search").fill("b")
+    visible_countries = page.locator("#country-list button[data-country]:visible")
+    expect(visible_countries).to_have_count(3)
+    assert visible_countries.evaluate_all(
+        "(buttons) => buttons.every((button) => button.dataset.country.toLowerCase().startsWith('b'))"
+    )
+    expect(page.locator('[data-country="Saudi Arabia"]')).to_be_hidden()
+    expect(page.locator("[data-country-group]:visible .country-letter")).to_have_text("B")
+    expect(page.locator("#country-count")).to_have_text("3 countries")
+    page.locator("#country-search").fill("zz")
+    expect(page.locator("#country-list button[data-country]:visible")).to_have_count(0)
+    expect(page.locator("#country-count")).to_have_text("0 countries")
+    expect(page.locator("#country-empty")).to_be_visible()
+    page.locator("#country-search").fill("")
+    expect(page.locator("#country-count")).to_have_text("32 countries")
+    expect(page.locator("#country-empty")).to_be_hidden()
     page.locator('[data-country="United Kingdom"]').click()
     page.locator("#destination-next").click()
     page.locator("#trip-start").fill(start.isoformat())

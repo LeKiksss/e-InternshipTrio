@@ -4,7 +4,6 @@
     if (!document.querySelector("#roaming-intro")) return;
     const { $, $$, delay, api, toast, confirmAction } = window.App;
     const intro = $("#roaming-intro"), planner = $("#roaming-planner"), loading = $("#roaming-loading"), result = $("#roaming-result"), empty = $("#roaming-empty");
-    const flags = { "United Kingdom":"🇬🇧", France:"🇫🇷", Egypt:"🇪🇬", "Saudi Arabia":"🇸🇦", Turkey:"🇹🇷", India:"🇮🇳", "United States":"🇺🇸", Canada:"🇨🇦", Germany:"🇩🇪", Italy:"🇮🇹", Japan:"🇯🇵", Singapore:"🇸🇬" };
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); const minDate = tomorrow.toISOString().slice(0, 10);
     $("#trip-start").min = minDate; $("#trip-end").min = minDate;
 
@@ -34,10 +33,11 @@
 
     function restoreInputs() {
       const state = controller.state;
-      $$("#country-list button").forEach((button) => button.classList.toggle("selected", button.dataset.country === state.destination));
+      $$("#country-list button[data-country]").forEach((button) => button.classList.toggle("selected", button.dataset.country === state.destination));
       $("#destination-next").disabled = !state.destination;
       $("#selected-country").textContent = state.destination || "Choose a destination";
-      $("#selected-flag").textContent = flags[state.destination] || "🌍";
+      const selectedButton = $$("#country-list button[data-country]").find((button) => button.dataset.country === state.destination);
+      $("#selected-flag").textContent = selectedButton?.dataset.flag || "🌍";
       $("#trip-start").value = state.start || ""; $("#trip-end").value = state.end || "";
       $("#trip-end").min = state.start || minDate;
       $("#trip-duration").hidden = !state.duration; $("#trip-days").textContent = state.duration || 0;
@@ -49,6 +49,10 @@
       const changed = controller.state.destination && controller.state.destination !== country;
       controller.update({ destination: country, ...(changed ? { usage: null, basePackage: null, currentPackage: null, chat: [], rejectedIds: [], savedId: null, completed: false, carrierAcknowledged: false } : {}) });
       restoreInputs();
+    }
+    function renderCountryCount(count) {
+      $("#country-count").textContent = `${count} ${count === 1 ? "country" : "countries"}`;
+      $("#country-empty").hidden = count > 0;
     }
     function validateDates({ update = true } = {}) {
       const startValue = $("#trip-start").value, endValue = $("#trip-end").value, error = $("#date-error");
@@ -179,7 +183,18 @@
     $$('[data-roaming-exit]').forEach((button) => button.addEventListener("click", () => controller.go("landing")));
     $$('[data-edit-roaming]').forEach((button) => button.addEventListener("click", () => controller.go(`step${button.dataset.editRoaming}`)));
     $("#country-list").addEventListener("click", (event) => { const button = event.target.closest("button[data-country]"); if (button) selectCountry(button.dataset.country); });
-    $("#country-search").addEventListener("input", (event) => { const query = event.target.value.toLowerCase(); $$("#country-list button").forEach((button) => button.hidden = !button.dataset.country.toLowerCase().includes(query)); });
+    $("#country-search").addEventListener("input", (event) => {
+      const query = event.target.value.trim().toLowerCase();
+      let visibleCount = 0;
+      $$("[data-country-group]").forEach((group) => {
+        const buttons = $$("button[data-country]", group);
+        buttons.forEach((button) => button.hidden = !button.dataset.country.toLowerCase().startsWith(query));
+        const visibleButtons = buttons.filter((button) => !button.hidden);
+        visibleCount += visibleButtons.length;
+        group.hidden = visibleButtons.length === 0;
+      });
+      renderCountryCount(visibleCount);
+    });
     $("#destination-next").addEventListener("click", () => { if (controller.state.destination) controller.go("step2"); });
     $("#trip-start").addEventListener("change", () => { $("#trip-end").min = $("#trip-start").value || minDate; validateDates(); }); $("#trip-end").addEventListener("change", () => validateDates());
     $("#dates-next").addEventListener("click", loadCurrentUsage);
@@ -196,7 +211,7 @@
     $("#roaming-result-back").addEventListener("click", () => controller.go(controller.state.viewingSaved ? "landing" : "step3"));
     $("#save-recommendation").addEventListener("click", saveSelection);
     $("#roaming-done").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) { toast("Acknowledge the preferred-carrier note before finishing.", "error"); return; } controller.update({ completed: true }); controller.go("landing"); });
-    $("#start-over-roaming").addEventListener("click", async () => { await controller.reset(); $("#country-search").value = ""; $$("#country-list button").forEach((button) => { button.hidden = false; button.classList.remove("selected"); }); controller.go("step1", { replace: true }); });
+    $("#start-over-roaming").addEventListener("click", async () => { await controller.reset(); $("#country-search").value = ""; $$("[data-country-group]").forEach((group) => group.hidden = false); const countryButtons = $$("#country-list button[data-country]"); countryButtons.forEach((button) => { button.hidden = false; button.classList.remove("selected"); }); renderCountryCount(countryButtons.length); controller.go("step1", { replace: true }); });
     $("#view-recent-roaming").addEventListener("click", () => { if (controller.state.currentPackage) controller.go("result"); });
     $("#saved-recommendations-list").addEventListener("click", (event) => { const card = event.target.closest(".saved-roaming-card"); if (!card) return; if (event.target.closest("[data-view-saved]")) viewSaved(card._recommendation); if (event.target.closest("[data-remove-saved]")) confirmAction({ title: "Remove saved recommendation?", message: "This removes the session-only saved card. Your completed trip history is unchanged.", action: "Remove", tone: "danger", onConfirm: async () => { try { const response = await api(`/api/roaming/saved/${card.dataset.savedId}`, { method: "DELETE" }); renderSavedRecommendations(response.recommendations); if (controller.state.savedId === card.dataset.savedId) controller.update({ savedId: null }); toast("Saved recommendation removed."); } catch (error) { toast(error.message, "error"); } } }); });
     $("#copy-code").addEventListener("click", async (event) => {

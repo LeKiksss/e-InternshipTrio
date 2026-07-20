@@ -53,7 +53,7 @@
         <article class="use-card" data-module="roaming">
           <div class="use-icon red"><svg><use href="#i-globe"/></svg></div>
           <div class="use-copy"><span class="card-kicker">ROAMING</span><h3>Travel with confidence</h3><p>Describe your trip and get one clear fictional package match.</p></div>
-          <div class="widget-metrics"><span><b>12</b> destinations</span><span><b>From AED 95</b></span></div>
+          <div class="widget-metrics"><span><b>{{ destinations|length }}</b> destinations</span><span><b>From AED 95</b></span></div>
           <button class="card-cta" type="button" data-nav="roaming">Plan roaming <svg><use href="#i-arrow"/></svg></button>
         </article>
       </div>
@@ -204,7 +204,7 @@
         <div class="planner-step active" data-roaming-step="1">
           <div class="workflow-toolbar"><button class="back-button compact-back" id="roaming-step1-back" type="button" aria-label="Back to roaming landing">←</button><div><span class="overline">STEP 1 OF 4</span><b>Destination</b></div><button class="text-button" type="button" data-roaming-exit>Exit</button></div><h2>Choose your destination</h2><p>Travelling from the UAE is already assumed.</p>
           <div class="search-field"><span>⌕</span><input id="country-search" type="search" placeholder="Search countries" aria-label="Search destinations"></div>
-          <div class="destination-groups"><span class="overline">POPULAR DESTINATIONS</span><div class="country-list" id="country-list">{% set flags = {'United Kingdom':'🇬🇧','France':'🇫🇷','Egypt':'🇪🇬','Saudi Arabia':'🇸🇦','Turkey':'🇹🇷','India':'🇮🇳','United States':'🇺🇸','Canada':'🇨🇦','Germany':'🇩🇪','Italy':'🇮🇹','Japan':'🇯🇵','Singapore':'🇸🇬'} %}{% for country in destinations %}<button type="button" data-country="{{ country }}"><span>{{ flags[country] }}</span><b>{{ country }}</b><i>✓</i></button>{% endfor %}</div></div>
+          <div class="destination-groups"><div class="destination-list-heading"><span class="overline">DESTINATIONS A–Z</span><span class="destination-count" id="country-count" aria-live="polite">{{ destinations|length }} countries</span></div><div class="country-list" id="country-list">{% for letter, countries in destination_groups %}<section class="country-group" data-country-group><div class="country-letter" aria-hidden="true">{{ letter }}</div><div class="country-buttons">{% for country in countries %}<button type="button" data-country="{{ country }}" data-flag="{{ country_flags[country] }}"><span>{{ country_flags[country] }}</span><b>{{ country }}</b><i>✓</i></button>{% endfor %}</div></section>{% endfor %}</div><p class="country-empty" id="country-empty" role="status" hidden>No countries begin with that search. Try another name.</p></div>
           <button class="button button-primary button-wide" id="destination-next" type="button" disabled>Continue</button>
         </div>
         <div class="planner-step" data-roaming-step="2" hidden>

@@ -5,7 +5,7 @@ from datetime import date, datetime
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
-from app import seed_database
+from app import COUNTRY_FLAGS, seed_database
 from app.extensions import db
 from app.models import BillRecord, ComplaintTicket, DiagnosticResult, RoamingPackage, User
 from app.services.mock_bill_analysis import analyse_bill
@@ -36,12 +36,20 @@ def app_shell():
     latest_bill = BillRecord.query.filter_by(user_id=current_user.id).order_by(BillRecord.created_at.desc()).first()
     tickets = ComplaintTicket.query.filter_by(user_id=current_user.id).order_by(ComplaintTicket.created_at.desc()).all()
     diagnostics = DiagnosticResult.query.filter_by(user_id=current_user.id).order_by(DiagnosticResult.created_at.desc()).all()
+    first_package = RoamingPackage.query.first()
+    destinations = sorted(json.loads(first_package.supported_destinations)) if first_package else []
+    destination_groups = [
+        (letter, [country for country in destinations if country.startswith(letter)])
+        for letter in sorted({country[0] for country in destinations})
+    ]
     return render_template(
         "app/shell.html",
         latest_bill=latest_bill,
         tickets=tickets,
         diagnostics=diagnostics,
-        destinations=json.loads(RoamingPackage.query.first().supported_destinations) if RoamingPackage.query.first() else [],
+        destinations=destinations,
+        destination_groups=destination_groups,
+        country_flags=COUNTRY_FLAGS,
     )
 
 

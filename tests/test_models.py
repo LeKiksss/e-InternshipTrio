@@ -1,3 +1,7 @@
+import json
+
+from app import DESTINATIONS, seed_database
+from app.extensions import db
 from app.models import BillRecord, ComplaintTicket, DiagnosticResult, RoamingPackage, User
 
 
@@ -16,5 +20,11 @@ def test_roaming_package_records_exist(app):
         packages = RoamingPackage.query.filter_by(active=True).all()
         assert len(packages) == 5
         assert all("Demo" in package.preferred_network or "Preferred Partner" in package.preferred_network for package in packages)
-        assert "Canada" in packages[0].destinations
+        assert len(DESTINATIONS) == 32
+        assert DESTINATIONS == sorted(DESTINATIONS)
+        assert all(package.destinations == DESTINATIONS for package in packages)
 
+        packages[0].supported_destinations = json.dumps(["Canada"])
+        db.session.commit()
+        seed_database()
+        assert db.session.get(RoamingPackage, packages[0].id).destinations == DESTINATIONS

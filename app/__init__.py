@@ -10,10 +10,41 @@ from .extensions import csrf, db, login_manager
 from .models import BillRecord, ComplaintTicket, DiagnosticResult, RoamingPackage, User
 
 
-DESTINATIONS = [
-    "United Kingdom", "France", "Egypt", "Saudi Arabia", "Turkey", "India",
-    "United States", "Canada", "Germany", "Italy", "Japan", "Singapore",
-]
+COUNTRY_FLAGS = {
+    "Australia": "🇦🇺",
+    "Austria": "🇦🇹",
+    "Bahrain": "🇧🇭",
+    "Belgium": "🇧🇪",
+    "Brazil": "🇧🇷",
+    "Canada": "🇨🇦",
+    "China": "🇨🇳",
+    "Egypt": "🇪🇬",
+    "France": "🇫🇷",
+    "Germany": "🇩🇪",
+    "Greece": "🇬🇷",
+    "India": "🇮🇳",
+    "Indonesia": "🇮🇩",
+    "Ireland": "🇮🇪",
+    "Italy": "🇮🇹",
+    "Japan": "🇯🇵",
+    "Malaysia": "🇲🇾",
+    "Maldives": "🇲🇻",
+    "Morocco": "🇲🇦",
+    "Netherlands": "🇳🇱",
+    "New Zealand": "🇳🇿",
+    "Oman": "🇴🇲",
+    "Philippines": "🇵🇭",
+    "Saudi Arabia": "🇸🇦",
+    "Singapore": "🇸🇬",
+    "South Africa": "🇿🇦",
+    "South Korea": "🇰🇷",
+    "Spain": "🇪🇸",
+    "Switzerland": "🇨🇭",
+    "Turkey": "🇹🇷",
+    "United Kingdom": "🇬🇧",
+    "United States": "🇺🇸",
+}
+DESTINATIONS = sorted(COUNTRY_FLAGS)
 
 
 def seed_database():
@@ -36,11 +67,15 @@ def seed_database():
         ("Voice Traveller", 210, 10, "8 GB", 500, 50, "*170*104#", "Demo Network A", "Designed for frequent daily calls with moderate data."),
         ("Data Max Abroad", 275, 10, "40 GB", 60, 50, "*170*105#", "Preferred Partner 1", "High data allowance for streaming and heavy use."),
     ]
+    supported_destinations = json.dumps(DESTINATIONS)
     for name, price, days, data, voice, sms, code, network, notes in package_data:
-        if not RoamingPackage.query.filter_by(name=name).first():
+        package = RoamingPackage.query.filter_by(name=name).first()
+        if package:
+            package.supported_destinations = supported_destinations
+        else:
             db.session.add(RoamingPackage(
                 name=name,
-                supported_destinations=json.dumps(DESTINATIONS),
+                supported_destinations=supported_destinations,
                 price=price,
                 currency="AED",
                 validity_days=days,
