@@ -99,7 +99,7 @@
     }));
 
     $("#demo-fill")?.addEventListener("click", () => {
-      $("#identity").value = "demo@prototype.local";
+      $("#identity").value = "aisha@example.test";
       $("#password").value = "Demo123!";
       toast("Sign-in details filled. Select Sign in when ready.");
     });

@@ -3,7 +3,7 @@
   document.addEventListener("DOMContentLoaded", async () => {
     if (!document.querySelector("#bill-input-choice")) return;
     const { $, $$, delay, api, toast, confirmAction } = window.App;
-    const choice = $("#bill-input-choice"), upload = $("#bill-upload-flow"), fields = $("#bill-fields"), analysis = $("#bill-analysis");
+    const choice = $("#bill-input-choice"), upload = $("#bill-upload-flow"), fields = $("#bill-fields"), analysis = $("#bill-analysis"), usageHistory = $("#bill-usage-history");
     const defaultDue = () => { const value = new Date(); value.setDate(value.getDate() + 5); return value.toISOString().slice(0, 10); };
     const controller = window.WorkflowState.create({
       name: "bill",
@@ -16,6 +16,7 @@
         upload.hidden = !["upload", "parsing"].includes(view);
         fields.hidden = view !== "fields";
         analysis.hidden = view !== "analysis";
+        usageHistory.hidden = view !== "usage";
         $("#bill-processing").hidden = view !== "parsing";
         $(".drop-zone").hidden = view === "parsing";
         $("#parse-bill").hidden = view === "parsing";
@@ -65,6 +66,8 @@
     $("#bill-done").addEventListener("click", () => controller.go("landing"));
     $("#bill-result-back").addEventListener("click", goBack);
     $("#view-current-analysis").addEventListener("click", () => controller.go("analysis"));
+    $("#view-usage-history").addEventListener("click", () => controller.go("usage"));
+    $("#usage-history-back").addEventListener("click", goBack);
     $$("#bill-form input").forEach((input) => input.addEventListener("input", captureForm));
 
     $("#bill-file").addEventListener("change", (event) => {
@@ -111,6 +114,6 @@
       $(".anomaly-card .overline").textContent = result.anomaly ? "ANOMALY DETECTED" : "NO ANOMALY";
     }
     $(".expand-explanation")?.addEventListener("click", (event) => { const copy = $(".expand-copy"); copy.classList.toggle("open"); event.currentTarget.textContent = copy.classList.contains("open") ? "Hide explanation" : "See explanation"; });
-    $("#switch-plan")?.addEventListener("click", () => confirmAction({ title: "Continue to plan page?", message: "This is a prototype. In the production application, this action would open the correct e& plan page.", action: "Continue demo", onConfirm: () => toast("Demo complete — no real plan was changed.") }));
+    $("#switch-plan")?.addEventListener("click", () => confirmAction({ title: "Continue to plan page?", message: "Review the plan details before confirming any account change.", action: "Continue", onConfirm: () => toast("Plan details are ready for review. No account change was made.") }));
   });
 })();

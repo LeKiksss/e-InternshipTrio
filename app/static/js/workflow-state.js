@@ -5,13 +5,14 @@
   const clone = (value) => JSON.parse(JSON.stringify(value));
 
   class WorkflowController {
-    constructor({ name, initialState, initialView = "landing", render }) {
+    constructor({ name, initialState, initialView = "landing", render, serializeState = null }) {
       this.name = name;
       this.initialState = clone(initialState);
       this.state = clone(initialState);
       this.view = initialView;
       this.initialView = initialView;
       this.render = render;
+      this.serializeState = serializeState;
       this.stack = [initialView];
       this.saveTimer = null;
       controllers.set(name, this);
@@ -67,7 +68,7 @@
         await window.App.api(`/api/workflows/${this.name}`, {
           method: "PUT",
           keepalive: true,
-          body: { view: this.view, state: this.state },
+          body: { view: this.view, state: this.serializeState ? this.serializeState(this.state) : this.state },
         });
       } catch (error) {
         window.App.toast(error.message || "Draft state could not be saved.", "error");

@@ -1,24 +1,24 @@
 import json
 import hashlib
-from datetime import date, datetime
+from datetime import datetime
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
 from flask_login import current_user, login_required
 
 from app import COUNTRY_FLAGS, seed_database
 from app.extensions import db
-from app.models import BillRecord, ComplaintTicket, DiagnosticResult, RoamingPackage, User
+from app.models import (
+    BillRecord,
+    ComplaintTicket,
+    DiagnosticResult,
+    RoamingPackage,
+    User,
+    UserMonthlyUsage,
+)
 from app.services.mock_bill_analysis import analyse_bill
 from app.services.mock_complaints import classify_complaint
 from app.services.mock_diagnostics import result_for_state
-from app.services.mock_roaming import (
-    adjusted_package,
-    calculate_trip_days,
-    current_usage_package,
-    parse_adjustment,
-    recommend_package,
-    scale_usage,
-)
+from app.services.roaming_recommendation import build_recommendation
 
 
 main_bp = Blueprint("main", __name__)
@@ -34,6 +34,13 @@ def index():
 @login_required
 def app_shell():
     latest_bill = BillRecord.query.filter_by(user_id=current_user.id).order_by(BillRecord.created_at.desc()).first()
+    usage_history = (
+        UserMonthlyUsage.query.filter_by(user_id=current_user.id)
+        .order_by(UserMonthlyUsage.usage_month.desc())
+        .limit(6)
+        .all()
+    )
+    usage_history.reverse()
     tickets = ComplaintTicket.query.filter_by(user_id=current_user.id).order_by(ComplaintTicket.created_at.desc()).all()
     diagnostics = DiagnosticResult.query.filter_by(user_id=current_user.id).order_by(DiagnosticResult.created_at.desc()).all()
     first_package = RoamingPackage.query.first()
@@ -45,6 +52,7 @@ def app_shell():
     return render_template(
         "app/shell.html",
         latest_bill=latest_bill,
+        usage_history=usage_history,
         tickets=tickets,
         diagnostics=diagnostics,
         destinations=destinations,
@@ -193,65 +201,91 @@ def close_complaint(ticket_id):
 @login_required
 def roaming_recommend():
     payload = request.get_json(silent=True) or {}
-    destination = payload.get("destination")
-    if not destination:
+    destination = (payload.get("destination") or "").strip()
+    if destination not in COUNTRY_FLAGS:
         return jsonify({"ok": False, "message": "Choose a destination first."}), 400
     if payload.get("simulate") == "database":
         return jsonify({"ok": False, "message": "The package catalogue is temporarily unavailable."}), 503
-    package = recommend_package(
-        RoamingPackage.query.filter_by(active=True).all(), destination,
-        int(payload.get("duration") or 1), payload.get("requirements") or "",
-        payload.get("rejected_ids") or [],
-    )
-    if not package:
-        return jsonify({"ok": False, "message": "No additional package matches this trip."}), 404
-    result = package.to_dict()
-    result["destination"] = destination
-    result["why"] = package.notes
-    return jsonify({"ok": True, "package": result})
+    try:
+        recommendation = build_recommendation(
+            current_user,
+            destination,
+            payload.get("start_date"),
+            payload.get("end_date"),
+        )
+    except ValueError as error:
+        return jsonify({"ok": False, "message": str(error)}), 400
+    session["roaming_current_recommendation"] = recommendation
+    session["roaming_conversation"] = []
+    session.modified = True
+    return jsonify({"ok": True, **recommendation})
 
 
 @main_bp.post("/api/roaming/current-usage")
 @login_required
 def roaming_current_usage():
+    return roaming_recommend()
+
+
+@main_bp.post("/api/roaming/refine")
+@login_required
+def roaming_refine():
     payload = request.get_json(silent=True) or {}
-    destination = (payload.get("destination") or "").strip()
-    if not destination:
-        return jsonify({"ok": False, "message": "Choose a destination first."}), 400
+    message = (payload.get("message") or "").strip()
+    if not message:
+        return jsonify({"ok": False, "message": "Enter an adjustment first."}), 400
+    current = session.get("roaming_current_recommendation")
+    if not isinstance(current, dict) or current.get("recommendation_id") != payload.get("current_recommendation_id"):
+        return jsonify({"ok": False, "message": "Start from the current recommendation before changing it."}), 409
+    destination = current.get("destination")
+    trip = current.get("trip", {})
+    conversation = session.get("roaming_conversation", [])
+    if not isinstance(conversation, list):
+        conversation = []
     try:
-        trip_days = calculate_trip_days(payload.get("start_date"), payload.get("end_date"), today=date.today())
+        recommendation = build_recommendation(
+            current_user,
+            destination,
+            trip.get("start_date"),
+            trip.get("end_date"),
+            latest_message=message,
+            current_recommendation=current,
+            conversation=conversation,
+        )
     except ValueError as error:
         return jsonify({"ok": False, "message": str(error)}), 400
-    return jsonify({
-        "ok": True,
-        "trip_days": trip_days,
-        "usage": scale_usage(trip_days),
-        "package": current_usage_package(destination, trip_days),
-    })
+    conversation.extend(
+        [
+            {"role": "user", "message": message[:500]},
+            {"role": "assistant", "message": recommendation.get("modification_summary") or recommendation["reason"]},
+        ]
+    )
+    session["roaming_conversation"] = conversation[-12:]
+    session["roaming_current_recommendation"] = recommendation
+    session.modified = True
+    return jsonify({"ok": True, **recommendation})
+
+
+@main_bp.get("/api/roaming/current")
+@login_required
+def roaming_current_recommendation():
+    recommendation = session.get("roaming_current_recommendation")
+    if not isinstance(recommendation, dict):
+        return jsonify({"ok": False, "message": "No current recommendation is available."}), 404
+    conversation = session.get("roaming_conversation", [])
+    return jsonify(
+        {
+            "ok": True,
+            "recommendation": recommendation,
+            "conversation": conversation if isinstance(conversation, list) else [],
+        }
+    )
 
 
 @main_bp.post("/api/roaming/adjust")
 @login_required
-def roaming_adjust():
-    payload = request.get_json(silent=True) or {}
-    destination = (payload.get("destination") or "").strip()
-    try:
-        trip_days = int(payload.get("trip_days") or 0)
-    except (TypeError, ValueError):
-        trip_days = 0
-    if not destination or trip_days < 1:
-        return jsonify({"ok": False, "message": "Complete the destination and travel dates first."}), 400
-    text = (payload.get("message") or "").strip()
-    if not text:
-        return jsonify({"ok": False, "message": "Enter an adjustment first."}), 400
-    intent = parse_adjustment(text)
-    if not intent:
-        return jsonify({
-            "ok": False,
-            "message": "I could not identify the adjustment. Try asking for more data, more calls, a cheaper option, or longer validity.",
-        }), 422
-    package = adjusted_package(intent, destination, trip_days)
-    return jsonify({"ok": True, "intent": intent, "package": package})
+def roaming_adjust_compatibility():
+    return roaming_refine()
 
 
 @main_bp.get("/api/roaming/saved")
@@ -269,18 +303,13 @@ def saved_roaming_recommendations():
 @login_required
 def save_roaming_recommendation():
     payload = request.get_json(silent=True) or {}
-    required = ("package_id", "package_name", "destination", "start_date", "end_date", "trip_days")
-    if any(not payload.get(field) for field in required):
+    current = session.get("roaming_current_recommendation")
+    if not isinstance(current, dict) or current.get("recommendation_id") != payload.get("recommendation_id"):
         return jsonify({"ok": False, "message": "The recommendation is incomplete and could not be saved."}), 400
-    allowed = (
-        "package_id", "package_name", "recommendation_name", "destination", "start_date", "end_date", "trip_days",
-        "price", "currency", "validity_days", "data_allowance", "local_minutes",
-        "international_minutes", "sms_allowance", "preferred_network", "activation_code",
-        "activation_instructions", "explanation",
-    )
-    recommendation = {field: payload.get(field) for field in allowed}
-    identity = "|".join(str(recommendation.get(field) or "") for field in ("package_id", "destination", "start_date", "end_date"))
-    recommendation["saved_id"] = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    recommendation = json.loads(json.dumps(current))
+    recommendation["saved_id"] = hashlib.sha256(
+        recommendation["recommendation_id"].encode("utf-8")
+    ).hexdigest()[:16]
     recommendation["saved_at"] = datetime.now().isoformat(timespec="seconds")
     saved = session.get("saved_roaming_recommendations", [])
     if not isinstance(saved, list):
@@ -330,14 +359,15 @@ def update_profile():
 @main_bp.post("/api/demo/reset")
 @login_required
 def reset_demo():
-    if current_user.email != "demo@prototype.local":
-        return jsonify({"ok": False, "message": "Reset is available for the default account only."}), 400
-    DiagnosticResult.query.filter_by(user_id=current_user.id).delete()
-    BillRecord.query.filter_by(user_id=current_user.id).delete()
-    ComplaintTicket.query.filter_by(user_id=current_user.id).delete()
-    db.session.commit()
+    if current_user.email in {"demo@prototype.local", "aisha@example.test"}:
+        DiagnosticResult.query.filter_by(user_id=current_user.id).delete()
+        BillRecord.query.filter_by(user_id=current_user.id).delete()
+        ComplaintTicket.query.filter_by(user_id=current_user.id).delete()
+        db.session.commit()
     session.pop("workflow_drafts", None)
     session.pop("saved_roaming_recommendations", None)
+    session.pop("roaming_current_recommendation", None)
+    session.pop("roaming_conversation", None)
     session.modified = True
     seed_database()
     return jsonify({"ok": True, "message": "Account data has been restored."})

@@ -42,7 +42,7 @@
       if (area === "roaming" && value !== "normal") { /* Applied by recommendation flow; selector change is intentionally non-destructive. */ }
     }
     $("[data-demo-retry]")?.addEventListener("click", () => { const control = $('[data-demo-control="dashboard"]'); control.value = "normal"; control.dispatchEvent(new Event("change")); });
-    $("#reset-demo-data").addEventListener("click", () => confirmAction({ title: "Reset account data?", message: "Diagnostics, bills, and complaint tickets for the default account will be restored.", action: "Reset data", tone: "danger", onConfirm: async () => {
+    $("#reset-demo-data").addEventListener("click", () => confirmAction({ title: "Reset account data?", message: "Saved workflow state and account activity will be restored.", action: "Reset data", tone: "danger", onConfirm: async () => {
       try { const data = await api("/api/demo/reset", { method: "POST" }); toast(data.message); closeSheet("demo-sheet"); setTimeout(() => location.reload(), 800); } catch (error) { toast(error.message, "error"); }
     }}));
   });

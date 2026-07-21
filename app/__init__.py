@@ -1,13 +1,13 @@
-import json
-from datetime import datetime, timedelta
+import logging
 from pathlib import Path
 
+import click
 from flask import Flask, jsonify, redirect, url_for
 from flask_wtf.csrf import CSRFError, generate_csrf
 
 from config import Config
 from .extensions import csrf, db, login_manager
-from .models import BillRecord, ComplaintTicket, DiagnosticResult, RoamingPackage, User
+from .models import User
 
 
 COUNTRY_FLAGS = {
@@ -48,84 +48,19 @@ DESTINATIONS = sorted(COUNTRY_FLAGS)
 
 
 def seed_database():
-    demo = User.query.filter_by(email="demo@prototype.local").first()
-    if not demo:
-        demo = User(
-            full_name="Customer Account",
-            email="demo@prototype.local",
-            phone_number="+971501234567",
-            notification_preferences="Important updates",
-            preferred_contact_method="SMS",
-        )
-        demo.set_password("Demo123!")
-        db.session.add(demo)
-        db.session.flush()
-    elif demo.full_name == "Prototype Demo User":
-        demo.full_name = "Customer Account"
-    package_data = [
-        ("Travel Data Lite", 95, 7, "5 GB", 30, 25, "*170*101#", "Partner Network A", "Best for navigation, messaging, and light browsing."),
-        ("Travel Connect", 175, 7, "12 GB", 120, 50, "*170*102#", "Preferred Partner 1", "Balanced data and calling for a one-week trip."),
-        ("Global Explorer", 320, 14, "30 GB", 300, 100, "*170*103#", "Partner Network B", "Extended validity for longer multi-purpose trips."),
-        ("Voice Traveller", 210, 10, "8 GB", 500, 50, "*170*104#", "Partner Network A", "Designed for frequent daily calls with moderate data."),
-        ("Data Max Abroad", 275, 10, "40 GB", 60, 50, "*170*105#", "Preferred Partner 1", "High data allowance for streaming and heavy use."),
-    ]
-    supported_destinations = json.dumps(DESTINATIONS)
-    activation_instructions = "Review the activation code and confirmation screen before continuing. No package is activated automatically."
-    for name, price, days, data, voice, sms, code, network, notes in package_data:
-        package = RoamingPackage.query.filter_by(name=name).first()
-        if package:
-            package.supported_destinations = supported_destinations
-            package.preferred_network = network
-            package.activation_instructions = activation_instructions
-        else:
-            db.session.add(RoamingPackage(
-                name=name,
-                supported_destinations=supported_destinations,
-                price=price,
-                currency="AED",
-                validity_days=days,
-                data_allowance=data,
-                voice_minutes=voice,
-                sms_allowance=sms,
-                activation_code=code,
-                activation_instructions=activation_instructions,
-                preferred_network=network,
-                notes=notes,
-            ))
+    from .seed_data import seed_all
 
-    diagnostic = DiagnosticResult.query.filter_by(user_id=demo.id).first() if demo.id else None
-    if demo.id and not diagnostic:
-        db.session.add(DiagnosticResult(
-            user_id=demo.id, download_speed=172.4, upload_speed=29.8, latency=21,
-            verdict="Excellent", location_label="Downtown Dubai",
-            created_at=datetime.now() - timedelta(days=5),
-        ))
-    elif diagnostic and diagnostic.location_label == "Downtown Dubai — demo location":
-        diagnostic.location_label = "Downtown Dubai"
-    if demo.id and not BillRecord.query.filter_by(user_id=demo.id).first():
-        db.session.add(BillRecord(
-            user_id=demo.id, total_amount=468, due_date=(datetime.now() + timedelta(days=5)).strftime("%d %b %Y"),
-            data_charges=240, call_charges=72, roaming_charges=96, addon_charges=60,
-            anomaly_summary="Bill is 28% higher than usual; roaming charges caused most of the increase.",
-        ))
-    ticket = ComplaintTicket.query.filter_by(user_id=demo.id).first() if demo.id else None
-    if demo.id and not ticket:
-        db.session.add(ComplaintTicket(
-            user_id=demo.id, ticket_number="ET-2026-00142", category="Network", severity="High",
-            summary="Intermittent mobile data near the Marina during afternoon hours.", status="Assigned",
-            latest_update="Assigned to Network Operations for an area coverage review.",
-            expected_resolution="Within 24 hours", assigned_department="Network Operations",
-            location_label="Dubai Marina",
-        ))
-    elif ticket and ticket.location_label == "Dubai Marina — demo location":
-        ticket.location_label = "Dubai Marina"
-    db.session.commit()
+    return seed_all()
 
 
 def create_app(config_object=Config):
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config_object)
+    logging.getLogger("app.services").setLevel(logging.INFO)
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
+    request_log_dir = app.config.get("GEMINI_REQUEST_LOG_DIR")
+    if request_log_dir:
+        Path(request_log_dir).mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
     login_manager.init_app(app)
@@ -158,7 +93,22 @@ def create_app(config_object=Config):
         return redirect(url_for("main.index"))
 
     with app.app_context():
+        from .schema_upgrade import upgrade_sqlite_schema
+
+        upgrade_sqlite_schema()
         db.create_all()
         seed_database()
+
+    @app.cli.command("seed-data")
+    def seed_data_command():
+        """Create or update the required users, usage history, and packages."""
+
+        counts = seed_database()
+        click.echo(
+            "Seeded "
+            f'{counts["seeded_users"]} users, '
+            f'{counts["usage_rows"]} usage rows, and '
+            f'{counts["active_packages"]} active packages.'
+        )
 
     return app

@@ -24,10 +24,12 @@ def runner(app):
     return app.test_cli_runner()
 
 
-def login_demo(client):
+def login_seeded(client, email="aisha@example.test"):
     return client.post(
         "/auth/login",
-        data={"identity": "demo@prototype.local", "password": "Demo123!", "remember": "y"},
+        data={"identity": email, "password": "Demo123!", "remember": "y"},
         follow_redirects=True,
     )
 
+
+login_demo = login_seeded

@@ -28,6 +28,13 @@ class User(UserMixin, db.Model):
     complaints = db.relationship("ComplaintTicket", backref="user", lazy=True, cascade="all, delete-orphan")
     diagnostics = db.relationship("DiagnosticResult", backref="user", lazy=True, cascade="all, delete-orphan")
     bills = db.relationship("BillRecord", backref="user", lazy=True, cascade="all, delete-orphan")
+    monthly_usage = db.relationship(
+        "UserMonthlyUsage",
+        back_populates="user",
+        lazy=True,
+        cascade="all, delete-orphan",
+        order_by="UserMonthlyUsage.usage_month",
+    )
 
     def set_password(self, password):
         self.password_hash = password_hasher.hash(password)
@@ -45,7 +52,21 @@ class User(UserMixin, db.Model):
 
 class RoamingPackage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    package_code = db.Column(db.String(40), unique=True, nullable=False, index=True)
     name = db.Column(db.String(100), nullable=False, unique=True)
+    family = db.Column(db.String(80), nullable=False)
+    category = db.Column(db.String(40), nullable=False)
+    price_aed = db.Column(db.Numeric(10, 2), nullable=False)
+    data_gb = db.Column(db.Numeric(10, 2), nullable=False)
+    local_minutes = db.Column(db.Integer, nullable=False)
+    international_minutes = db.Column(db.Integer, nullable=False)
+    sms = db.Column(db.Integer, nullable=False)
+    coverage_scope = db.Column(db.String(40), default="ALL_DESTINATIONS", nullable=False)
+    repeatable = db.Column(db.Boolean, default=True, nullable=False)
+    stackable = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Legacy columns remain mapped so existing SQLite rows can be upgraded in
+    # place without rebuilding or deleting the original package table.
     supported_destinations = db.Column(db.Text, nullable=False)
     price = db.Column(db.Float, nullable=False)
     currency = db.Column(db.String(8), default="AED", nullable=False)
@@ -58,6 +79,7 @@ class RoamingPackage(db.Model):
     preferred_network = db.Column(db.String(100), nullable=False)
     notes = db.Column(db.Text, default="")
     active = db.Column(db.Boolean, default=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=utcnow, nullable=False)
 
     @property
@@ -67,19 +89,83 @@ class RoamingPackage(db.Model):
     def to_dict(self):
         return {
             "id": self.id,
+            "package_code": self.package_code,
             "name": self.name,
+            "family": self.family,
+            "category": self.category,
             "destinations": self.destinations,
-            "price": self.price,
+            "price": float(self.price_aed),
+            "price_aed": float(self.price_aed),
             "currency": self.currency,
             "validity_days": self.validity_days,
-            "data_allowance": self.data_allowance,
-            "voice_minutes": self.voice_minutes,
-            "sms_allowance": self.sms_allowance,
+            "data_allowance": f"{float(self.data_gb):g} GB",
+            "data_gb": float(self.data_gb),
+            "voice_minutes": self.local_minutes,
+            "local_minutes": self.local_minutes,
+            "international_minutes": self.international_minutes,
+            "sms_allowance": self.sms,
+            "sms": self.sms,
+            "coverage_scope": self.coverage_scope,
             "activation_code": self.activation_code,
             "activation_instructions": self.activation_instructions,
             "preferred_network": self.preferred_network,
+            "repeatable": self.repeatable,
+            "stackable": self.stackable,
+            "active": self.active,
             "notes": self.notes,
             "updated_at": self.updated_at.strftime("%d %b %Y"),
+        }
+
+    def to_catalog_dict(self):
+        return {
+            "package_code": self.package_code,
+            "name": self.name,
+            "family": self.family,
+            "category": self.category,
+            "validity_days": self.validity_days,
+            "price_aed": float(self.price_aed),
+            "data_gb": float(self.data_gb),
+            "local_minutes": self.local_minutes,
+            "international_minutes": self.international_minutes,
+            "sms": self.sms,
+            "coverage_scope": self.coverage_scope,
+            "repeatable": self.repeatable,
+            "stackable": self.stackable,
+            "active": self.active,
+        }
+
+
+class UserMonthlyUsage(db.Model):
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "usage_month", name="uq_user_monthly_usage_month"),
+        db.CheckConstraint("data_gb >= 0", name="ck_monthly_usage_data_nonnegative"),
+        db.CheckConstraint("local_minutes >= 0", name="ck_monthly_usage_local_nonnegative"),
+        db.CheckConstraint(
+            "international_minutes >= 0",
+            name="ck_monthly_usage_international_nonnegative",
+        ),
+        db.CheckConstraint("sms >= 0", name="ck_monthly_usage_sms_nonnegative"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    usage_month = db.Column(db.Date, nullable=False, index=True)
+    data_gb = db.Column(db.Numeric(10, 3), nullable=False)
+    local_minutes = db.Column(db.Integer, nullable=False)
+    international_minutes = db.Column(db.Integer, nullable=False)
+    sms = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = db.relationship("User", back_populates="monthly_usage")
+
+    def to_dict(self):
+        return {
+            "usage_month": self.usage_month.isoformat(),
+            "data_gb": float(self.data_gb),
+            "local_minutes": self.local_minutes,
+            "international_minutes": self.international_minutes,
+            "sms": self.sms,
         }
 
 
@@ -161,4 +247,3 @@ class BillRecord(db.Model):
             "anomaly_summary": self.anomaly_summary,
             "created_at": self.created_at.strftime("%d %b %Y"),
         }
-

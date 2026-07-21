@@ -119,7 +119,7 @@
       controller.update({ attachment: { name: file.name, status: "Analysing attachment…" } }); renderAttachment();
       await delay(window.PROTOTYPE?.testing ? 20 : 900);
       controller.update({ attachment: { name: file.name, status: "Service screenshot detected" } }); renderAttachment();
-      toast("Attachment analysed locally with placeholder logic.");
+      toast("Attachment details captured for your review.");
     });
     function renderAttachment() {
       const attachment = controller.state.attachment;

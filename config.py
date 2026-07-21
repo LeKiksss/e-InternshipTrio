@@ -34,6 +34,13 @@ class Config:
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = "Lax"
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
+    GEMINI_REQUEST_LOG_DIR = os.getenv(
+        "GEMINI_REQUEST_LOG_DIR",
+        str(BASE_DIR / "instance" / "api_request_logs"),
+    )
 
 
 class TestConfig(Config):
@@ -41,3 +48,5 @@ class TestConfig(Config):
     SECRET_KEY = "test-secret-key"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     WTF_CSRF_ENABLED = False
+    GEMINI_API_KEY = ""
+    GEMINI_REQUEST_LOG_DIR = None
