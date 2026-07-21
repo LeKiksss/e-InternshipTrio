@@ -207,17 +207,65 @@ def validate_recommendation_decision(
     selection["total_data_gb"] = round(selection["total_data_gb"], 3)
     selection["unused_validity_days"] = max(0, selection["total_validity_days"] - trip_days)
 
+    parsed_requirements = parsed_requirements or {}
+    effective_requirements = dict(requirements)
+    for metric, value in parsed_requirements.get(
+        "preservation_minimums", {}
+    ).items():
+        if metric in REQUIREMENT_TO_TOTAL:
+            effective_requirements[metric] = max(
+                float(effective_requirements.get(metric, 0)),
+                float(value),
+            )
     for metric, total_field in REQUIREMENT_TO_TOTAL.items():
-        if selection[total_field] + 1e-9 < float(requirements.get(metric, 0)):
+        if selection[total_field] + 1e-9 < float(
+            effective_requirements.get(metric, 0)
+        ):
             errors.append(f"The plan does not meet the required {metric.replace('_', ' ')}.")
     if (
-        requirements.get("total_call_minutes") is not None
+        effective_requirements.get("total_call_minutes") is not None
         and selection["total_local_minutes"] + selection["total_international_minutes"] + 1e-9
-        < float(requirements["total_call_minutes"])
+        < float(effective_requirements["total_call_minutes"])
     ):
         errors.append("The plan does not meet the required total call minutes.")
 
-    parsed_requirements = parsed_requirements or {}
+    trip_wide_minimums = {
+        metric: float(effective_requirements[metric])
+        for metric in parsed_requirements.get("trip_wide_metrics", [])
+        if metric in effective_requirements
+    }
+    if trip_wide_minimums and not parsed_requirements.get("segments"):
+        item_fields = {
+            "data_gb": "data_gb_per_package",
+            "local_minutes": "local_minutes_per_package",
+            "international_minutes": "international_minutes_per_package",
+            "sms": "sms_per_package",
+        }
+        for item in factual_items:
+            covered_days = item["coverage_end_day"] - item["coverage_start_day"] + 1
+            share = covered_days / trip_days
+            for metric, field in item_fields.items():
+                if metric not in trip_wide_minimums:
+                    continue
+                available = item[field] * item["quantity"]
+                required = trip_wide_minimums[metric] * share
+                if available + 1e-9 < required:
+                    errors.append(
+                        f'Package {item["package_code"]} does not make the required '
+                        f"{metric.replace('_', ' ')} available throughout its trip days."
+                    )
+            if "total_call_minutes" in trip_wide_minimums:
+                available_calls = (
+                    item["local_minutes_per_package"]
+                    + item["international_minutes_per_package"]
+                ) * item["quantity"]
+                required_calls = trip_wide_minimums["total_call_minutes"] * share
+                if available_calls + 1e-9 < required_calls:
+                    errors.append(
+                        f'Package {item["package_code"]} does not make the required '
+                        "call minutes available throughout its trip days."
+                    )
+
     maximum_price = parsed_requirements.get("maximum_price_aed")
     if maximum_price is not None and selection["total_price_aed"] > float(maximum_price) + 1e-9:
         errors.append("The plan exceeds the explicit maximum price.")
@@ -250,7 +298,12 @@ def validate_recommendation_decision(
     if (
         selection["unused_validity_days"] > 0
         and not allow_extra_validity
-        and exact_valid_plan_exists(packages, trip_days, requirements)
+        and exact_valid_plan_exists(
+            packages,
+            trip_days,
+            effective_requirements,
+            trip_wide_minimums=trip_wide_minimums,
+        )
     ):
         errors.append("A reasonable exact-duration plan exists; unnecessary validity overcoverage is not allowed.")
 

@@ -83,7 +83,7 @@ def test_route_uses_current_user_and_ignores_browser_user_id(client, app):
 
 def test_route_calls_gemini_for_initial_and_every_refinement(client, app, monkeypatch):
     calls = []
-    responses = [model_plan("PRE-7D"), model_plan("DP-7D")]
+    responses = [model_plan("ESS-7D"), model_plan("DP-7D")]
 
     def fake_request(context, **_kwargs):
         calls.append(context)
@@ -111,7 +111,7 @@ def test_route_calls_gemini_for_initial_and_every_refinement(client, app, monkey
     assert refined.status_code == 200
     assert len(calls) == 2
     assert len(calls[0]["active_package_catalogue"]) == 42
-    assert calls[1]["latest_user_message"] == "Give me more data"
+    assert calls[1]["latest_user_instruction"] == "Give me more data"
 
 
 def test_seeded_users_receive_usage_appropriate_package_families(client):
@@ -160,6 +160,168 @@ def test_omar_three_day_trip_uses_roam_essentials_without_a_buffer(client):
         for item in response.json["selection"]["items"]
     ] == [("ESS-3D", 1)]
     assert response.json["selection"]["total_price_aed"] == 35
+
+
+@pytest.mark.parametrize(
+    "greeting",
+    ("Hello", "Hey there!", "Good morning", "Salaam"),
+)
+def test_greetings_reply_without_calling_gemini_or_changing_plan(
+    client,
+    monkeypatch,
+    greeting,
+):
+    login_seeded(client, "omar@example.test")
+    start, end = trip(3)
+    initial = client.post(
+        "/api/roaming/recommend",
+        json={"destination": "France", "start_date": start, "end_date": end},
+    ).json
+    calls = []
+
+    def unexpected_request(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("A greeting must not call Gemini.")
+
+    monkeypatch.setattr(
+        "app.services.roaming_recommendation.request_recommendation_decision",
+        unexpected_request,
+    )
+    response = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": initial["recommendation_id"],
+            "message": greeting,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json["response_type"] == "message"
+    assert "roaming plan" in response.json["message"]
+    assert response.json["recommendation_id"] == initial["recommendation_id"]
+    assert calls == []
+
+
+def test_natural_language_nevermind_budget_request_replaces_old_constraint(client):
+    login_seeded(client, "omar@example.test")
+    start, end = trip(3)
+    initial = client.post(
+        "/api/roaming/recommend",
+        json={"destination": "France", "start_date": start, "end_date": end},
+    ).json
+    calls_plan = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": initial["recommendation_id"],
+            "message": "200 local minutes",
+        },
+    ).json
+    assert calls_plan["selection"]["items"][0]["package_code"] == "VP-3D"
+
+    cheaper = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": calls_plan["recommendation_id"],
+            "message": (
+                "nevermind can we go cheap but focus on calls "
+                "my budget is like 30dhs"
+            ),
+        },
+    )
+
+    assert cheaper.status_code == 200
+    assert cheaper.json["selection"]["items"][0]["package_code"] == "ESS-3D"
+    assert cheaper.json["selection"]["total_price_aed"] == 35
+    assert "local_minutes" not in cheaper.json["_active_requirements"]["minimums"]
+    assert cheaper.json["_active_requirements"]["maximum_price_aed"] == 30
+    assert cheaper.json["_active_requirements"]["reset_constraints"] is True
+    assert "maximum price" in cheaper.json["chat_message"]
+
+
+def test_multiple_refinements_restore_previous_and_original_without_gemini(
+    client,
+    app,
+    monkeypatch,
+):
+    from app.models import RoamingRecommendationHistory
+
+    login_seeded(client, "omar@example.test")
+    start, end = trip(3)
+    original = client.post(
+        "/api/roaming/recommend",
+        json={"destination": "France", "start_date": start, "end_date": end},
+    ).json
+    outputs = [original]
+    for message in (
+        "I need 200 local minutes",
+        "I need 100 SMS",
+        "I need 5 GB",
+    ):
+        response = client.post(
+            "/api/roaming/refine",
+            json={
+                "current_recommendation_id": outputs[-1]["recommendation_id"],
+                "message": message,
+            },
+        )
+        assert response.status_code == 200
+        outputs.append(response.json)
+
+    assert len({item["recommendation_id"] for item in outputs}) == 4
+    with app.app_context():
+        assert RoamingRecommendationHistory.query.count() == 4
+
+    calls = []
+
+    def unexpected_request(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("History navigation must not call Gemini.")
+
+    monkeypatch.setattr(
+        "app.services.roaming_recommendation.request_recommendation_decision",
+        unexpected_request,
+    )
+    previous = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": outputs[-1]["recommendation_id"],
+            "message": "I want to go back to the previous package",
+        },
+    )
+    assert previous.status_code == 200
+    assert previous.json["history_action"] == "previous"
+    assert previous.json["recommendation_id"] == outputs[-2]["recommendation_id"]
+    assert previous.json["selection"] == outputs[-2]["selection"]
+
+    previous_again = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": previous.json["recommendation_id"],
+            "message": "Go back one",
+        },
+    )
+    assert previous_again.status_code == 200
+    assert previous_again.json["history_action"] == "previous"
+    assert previous_again.json["recommendation_id"] == outputs[-3][
+        "recommendation_id"
+    ]
+    assert previous_again.json["selection"] == outputs[-3]["selection"]
+
+    restored = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": previous_again.json[
+                "recommendation_id"
+            ],
+            "message": "Can I get the original plan you recommended?",
+        },
+    )
+    assert restored.status_code == 200
+    assert restored.json["history_action"] == "original"
+    assert restored.json["recommendation_id"] == original["recommendation_id"]
+    assert restored.json["selection"] == original["selection"]
+    assert restored.json["_active_requirements"]["minimums"] == {}
+    assert calls == []
 
 
 def test_saved_multi_package_and_segmented_plans_reopen_with_all_facts(client):

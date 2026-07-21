@@ -14,6 +14,25 @@ def _current_totals(current_recommendation):
     return (current_recommendation or {}).get("selection", {})
 
 
+def _active_minimums(current_recommendation):
+    return (
+        (current_recommendation or {})
+        .get("_active_requirements", {})
+        .get("minimums", {})
+    )
+
+
+def _mentions_whole_trip(text):
+    return bool(
+        re.search(
+            r"\b(?:across|throughout|for)\s+(?:all\s+|the\s+)?"
+            r"(?:entire\s+|whole\s+)?(?:(?:\d+|three|seven|fourteen)\s+days?|trip)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
 def parse_user_requirements(message, current_recommendation=None, trip_days=None):
     text = " ".join((message or "").strip().split())
     lowered = text.lower()
@@ -42,6 +61,21 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
     )
     if maximum_price is None:
         maximum_price = _number(r"aed\s*(\d+(?:\.\d+)?)\s*(?:maximum|max|or less)?", text)
+    if maximum_price is None:
+        maximum_price = _number(
+            r"\bbudget(?:\s+(?:is|of|around|about|like))?\s*"
+            r"(?:is\s+|of\s+|around\s+|about\s+|like\s+)?"
+            r"(?:aed\s*)?(\d+(?:\.\d+)?)\s*(?:aed|dhs?|dirhams?)?\b",
+            text,
+        )
+    if maximum_price is None:
+        maximum_price = _number(
+            r"\b(?:aed\s*)?(\d+(?:\.\d+)?)\s*(?:aed|dhs?|dirhams?)?"
+            r"\s+(?:as\s+my\s+|for\s+the\s+)?budget\b",
+            text,
+        )
+    if maximum_price is not None:
+        comparative.append("budget_limited")
     minimum_validity = _number(r"(?:at least|minimum|need)\s+(\d+)\s+days?\s+(?:of\s+)?validity", text)
 
     if data is not None:
@@ -61,6 +95,29 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
     if sms is not None:
         minimums["sms"] = sms
         affected_metrics.add("sms")
+
+    # A short correction such as "no, 200 across the 3 days" inherits the
+    # single active metric instead of losing the already-established unit.
+    if not minimums:
+        scoped_number = _number(
+            r"\b(\d+(?:\.\d+)?)\s+(?:across|throughout|for)\b",
+            text,
+        )
+        active_minimums = _active_minimums(current_recommendation)
+        active_metrics = [
+            metric
+            for metric in (
+                "data_gb",
+                "local_minutes",
+                "international_minutes",
+                "sms",
+                "total_call_minutes",
+            )
+            if metric in active_minimums
+        ]
+        if scoped_number is not None and len(active_metrics) == 1:
+            minimums[active_metrics[0]] = scoped_number
+            affected_metrics.add(active_metrics[0])
 
     if re.search(
         r"\b(no|zero|not (?:make|need|use) any) calls?\b"
@@ -125,8 +182,34 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
     if re.search(r"\b(fewer|less|lower|reduce) (?:calls?|call minutes?|voice)\b", lowered):
         comparative.append("fewer_calls")
         affected_metrics.update(("local_minutes", "international_minutes", "total_call_minutes"))
-    if re.search(r"\bcheaper\b|\blower (?:price|cost)\b|\bspend less\b", lowered):
+    if re.search(
+        r"\bcheap(?:er)?\b|\blower (?:price|cost)\b|\bspend less\b|\bgo low[- ]cost\b",
+        lowered,
+    ):
         comparative.append("cheaper")
+    if re.search(
+        r"\b(?:focus|focused|prioriti[sz]e|priority)\b[^.?!]{0,24}\b(?:calls?|voice)\b"
+        r"|\b(?:calls?|voice)\b[^.?!]{0,18}\b(?:focus|priority|matters? most)\b",
+        lowered,
+    ):
+        comparative.append("focus_calls")
+        affected_metrics.update(
+            ("local_minutes", "international_minutes", "total_call_minutes")
+        )
+    if re.search(
+        r"\b(?:focus|focused|prioriti[sz]e|priority)\b[^.?!]{0,24}\bdata\b"
+        r"|\bdata\b[^.?!]{0,18}\b(?:focus|priority|matters? most)\b",
+        lowered,
+    ):
+        comparative.append("focus_data")
+        affected_metrics.add("data_gb")
+    if re.search(
+        r"\b(?:focus|focused|prioriti[sz]e|priority)\b[^.?!]{0,24}\b(?:sms|texts?)\b"
+        r"|\b(?:sms|texts?)\b[^.?!]{0,18}\b(?:focus|priority|matters? most)\b",
+        lowered,
+    ):
+        comparative.append("focus_sms")
+        affected_metrics.add("sms")
     if re.search(r"\bfewer activations?\b|\bless activations?\b", lowered):
         comparative.append("fewer_activations")
     if re.search(r"\blonger validity\b|\bmore validity\b", lowered):
@@ -137,8 +220,29 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
                 float(totals["total_validity_days"]) + 1,
             )
 
-    restore_original = bool(re.search(r"\brestore (?:my )?original recommendation\b", lowered))
+    reset_constraints = bool(
+        re.search(
+            r"\bnever\s*mind\b|\bforget (?:that|it|the previous request)\b"
+            r"|\b(?:ignore|disregard) (?:that|my previous request|the previous request)\b"
+            r"|\bstart (?:again|over|fresh)\b",
+            lowered,
+        )
+    )
+    restore_original = bool(
+        re.search(
+            r"\brestore (?:my |the )?original (?:recommendation|plan|package)\b"
+            r"|\b(?:original|initial|first) (?:recommendation|plan|package)\b"
+            r"|\b(?:plan|package|recommendation) you (?:first|originally) recommended\b",
+            lowered,
+        )
+    )
+    whole_trip_mentioned = _mentions_whole_trip(text)
     segments = parse_temporal_segments(text, trip_days) if trip_days else []
+    if whole_trip_mentioned:
+        segments = []
+    trip_wide_metrics = sorted(
+        metric for metric in affected_metrics if metric in minimums and not segments
+    )
     interpretation_parts = []
     if minimums:
         interpretation_parts.append(
@@ -164,11 +268,14 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
         "comparative": comparative,
         "segments": segments,
         "restore_original": restore_original,
+        "reset_constraints": reset_constraints,
         "interpretation": "; ".join(interpretation_parts) or "No explicit numeric constraint detected.",
         "affected_metrics": sorted(affected_metrics),
+        "trip_wide_metrics": trip_wide_metrics,
         "maximum_price_mentioned": maximum_price is not None,
         "minimum_validity_mentioned": minimum_validity is not None,
         "segments_mentioned": bool(segments),
+        "whole_trip_mentioned": whole_trip_mentioned,
     }
 
 
@@ -178,7 +285,7 @@ def merge_requirement_state(previous, latest):
     if latest.get("restore_original"):
         return parse_user_requirements("")
 
-    previous = deepcopy(previous or {})
+    previous = {} if latest.get("reset_constraints") else deepcopy(previous or {})
     merged = deepcopy(latest)
     affected = set(latest.get("affected_metrics", []))
     merged_minimums = dict(previous.get("minimums", {}))
@@ -192,11 +299,18 @@ def merge_requirement_state(previous, latest):
     merged["minimums"] = merged_minimums
     merged["exact_targets"] = merged_targets
 
+    merged_trip_wide = set(previous.get("trip_wide_metrics", []))
+    merged_trip_wide.difference_update(affected)
+    merged_trip_wide.update(latest.get("trip_wide_metrics", []))
+    merged["trip_wide_metrics"] = sorted(merged_trip_wide)
+
     if not latest.get("maximum_price_mentioned"):
         merged["maximum_price_aed"] = previous.get("maximum_price_aed")
     if not latest.get("minimum_validity_mentioned"):
         merged["minimum_validity_days"] = previous.get("minimum_validity_days")
-    if not latest.get("segments_mentioned"):
+    if latest.get("whole_trip_mentioned"):
+        merged["segments"] = []
+    elif not latest.get("segments_mentioned"):
         merged["segments"] = deepcopy(previous.get("segments", []))
 
     # Comparatives are evaluated once against the current validated plan. Any

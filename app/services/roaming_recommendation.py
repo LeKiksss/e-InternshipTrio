@@ -10,7 +10,11 @@ from flask import current_app
 
 from app.models import RoamingPackage, UserMonthlyUsage
 
-from .gemini_recommender import GeminiUnavailable, request_recommendation_decision
+from .gemini_recommender import (
+    GeminiRateLimited,
+    GeminiUnavailable,
+    request_recommendation_decision,
+)
 from .package_fallback_optimizer import optimize_package_plan
 from .recommendation_validator import validate_recommendation_decision
 from .usage_analysis import METRICS, build_trip_usage_analysis, calculate_trip_days
@@ -18,6 +22,12 @@ from .user_requirement_parser import merge_requirement_state, parse_user_require
 
 
 LOGGER = logging.getLogger(__name__)
+SELECTION_TOTAL_FIELDS = {
+    "data_gb": "total_data_gb",
+    "local_minutes": "total_local_minutes",
+    "international_minutes": "total_international_minutes",
+    "sms": "total_sms",
+}
 
 
 def _rounded_usage(values):
@@ -34,6 +44,92 @@ def _rounded_requirements(values):
     if "total_call_minutes" in values:
         rounded["total_call_minutes"] = round(float(values["total_call_minutes"]), 3)
     return rounded
+
+
+def _refinement_preservation_minimums(current_recommendation, latest_parsed):
+    """Keep every allowance the latest message did not ask to change."""
+
+    if (
+        not latest_parsed.get("latest_message")
+        or latest_parsed.get("restore_original")
+        or latest_parsed.get("reset_constraints")
+    ):
+        return {}
+    selection = (current_recommendation or {}).get("selection", {})
+    if not selection:
+        return {}
+
+    affected = set(latest_parsed.get("affected_metrics", []))
+    if "total_call_minutes" in affected:
+        affected.update(("local_minutes", "international_minutes"))
+
+    minimums = {}
+    for metric, total_field in SELECTION_TOTAL_FIELDS.items():
+        if metric in affected or selection.get(total_field) is None:
+            continue
+        value = float(selection[total_field])
+        minimums[metric] = round(value, 3) if metric == "data_gb" else int(value)
+    return minimums
+
+
+def _compact_catalogue(packages):
+    return [
+        {
+            "package_code": package.package_code,
+            "family": package.family,
+            "validity_days": package.validity_days,
+            "price_aed": float(package.price_aed),
+            "data_gb": float(package.data_gb),
+            "local_minutes": package.local_minutes,
+            "international_minutes": package.international_minutes,
+            "sms": package.sms,
+        }
+        for package in packages
+    ]
+
+
+def _compact_current_plan(recommendation):
+    selection = (recommendation or {}).get("selection", {})
+    return {
+        "items": [
+            {
+                "package_code": item.get("package_code"),
+                "quantity": item.get("quantity"),
+                "coverage_start_day": item.get("coverage_start_day"),
+                "coverage_end_day": item.get("coverage_end_day"),
+                "assigned_segment_id": item.get("assigned_segment_id"),
+            }
+            for item in selection.get("items", [])
+        ],
+        "totals": {
+            key: selection.get(key)
+            for key in (
+                "total_price_aed",
+                "total_validity_days",
+                "total_data_gb",
+                "total_local_minutes",
+                "total_international_minutes",
+                "total_sms",
+                "activation_count",
+            )
+        },
+    }
+
+
+def _compact_constraints(parsed_requirements):
+    return {
+        "minimums": parsed_requirements.get("minimums", {}),
+        "preservation_minimums": parsed_requirements.get(
+            "preservation_minimums", {}
+        ),
+        "trip_wide_metrics": parsed_requirements.get("trip_wide_metrics", []),
+        "exact_targets": parsed_requirements.get("exact_targets", {}),
+        "maximum_price_aed": parsed_requirements.get("maximum_price_aed"),
+        "minimum_validity_days": parsed_requirements.get("minimum_validity_days"),
+        "comparative": parsed_requirements.get("comparative", []),
+        "segments": parsed_requirements.get("segments", []),
+        "reset_constraints": parsed_requirements.get("reset_constraints", False),
+    }
 
 
 def _segment_requirements(segment_descriptors, monthly_estimate):
@@ -89,12 +185,8 @@ def _apply_explicit_segment_targets(segments, minimums):
 
 
 def _decision_context(
-    user,
     destination,
-    start_date,
-    end_date,
     trip_days,
-    usage_analysis,
     requirements,
     packages,
     parsed_requirements,
@@ -102,40 +194,22 @@ def _decision_context(
     conversation,
 ):
     context = {
-        "anonymous_user_id": user.id,
         "destination": destination,
-        "trip": {
-            "start_date": start_date,
-            "end_date": end_date,
-            "trip_days": trip_days,
-        },
-        "raw_monthly_usage": usage_analysis["raw_monthly_usage"],
-        "detected_outliers": usage_analysis["excluded_outliers"],
-        "usage_analysis_policy": usage_analysis["outlier_policy"],
-        "pattern_classification": usage_analysis["pattern_classification"],
-        "recency_weights": [0.10, 0.12, 0.15, 0.18, 0.20, 0.25],
-        "weighted_monthly_profile": _rounded_usage(usage_analysis["weighted_monthly_estimate"]),
+        "trip_days": trip_days,
         "trip_requirements": _rounded_requirements(requirements),
-        "active_package_catalogue": [package.to_catalog_dict() for package in packages],
-        "recommendation_priorities": [
-            "meet duration and usage requirements",
-            "respect temporal segments",
-            "prefer practical exact-duration coverage",
-            "minimize unused validity",
-            "minimize price",
-            "minimize allowance waste",
-            "minimize activations when earlier factors are comparable",
-        ],
-        "activation_practicality": "Three activations are reasonable for a normal 23-day trip.",
+        "requirement_scope": {
+            "default": "entire_trip",
+            "trip_wide_metrics": parsed_requirements.get("trip_wide_metrics", []),
+        },
+        "active_package_catalogue": _compact_catalogue(packages),
     }
     if parsed_requirements.get("latest_message"):
         context.update(
             {
-                "current_validated_recommendation": current_recommendation,
-                "conversation_history": conversation or [],
-                "parsed_requirements": parsed_requirements,
-                "latest_user_message": parsed_requirements["latest_message"],
-                "HIGHEST_PRIORITY_LATEST_USER_INSTRUCTION": parsed_requirements["latest_message"],
+                "latest_user_instruction": parsed_requirements["latest_message"],
+                "active_constraints": _compact_constraints(parsed_requirements),
+                "current_plan": _compact_current_plan(current_recommendation),
+                "recent_conversation": (conversation or [])[-4:],
             }
         )
     return context
@@ -163,6 +237,55 @@ def _recommendation_id(user_id, destination, start_date, end_date, selection):
         sort_keys=True,
     )
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
+
+
+def _selection_signature(selection):
+    return tuple(
+        (
+            item.get("package_code"),
+            item.get("quantity"),
+            item.get("coverage_start_day"),
+            item.get("coverage_end_day"),
+        )
+        for item in (selection or {}).get("items", [])
+    )
+
+
+def _refinement_chat_message(
+    plan,
+    current_recommendation,
+    *,
+    gemini_rate_limited=False,
+):
+    changed = _selection_signature(plan.get("selection")) != _selection_signature(
+        (current_recommendation or {}).get("selection")
+    )
+    if gemini_rate_limited and changed:
+        message = (
+            "The Gemini request limit was reached, so I updated the plan using "
+            "the local package catalogue."
+        )
+    elif gemini_rate_limited:
+        message = (
+            "The Gemini request limit was reached, so I checked the available "
+            "packages locally. Your current package is still the closest valid "
+            "match, so I kept it unchanged."
+        )
+    elif not changed:
+        message = (
+            "I reviewed that request, but your current package is still the closest "
+            "valid match, so I kept it unchanged."
+        )
+    elif plan.get("source") == "deterministic_fallback":
+        message = "I updated the package plan using the available package catalogue."
+    else:
+        message = plan.get("modification_summary") or (
+            "I updated the package plan to reflect your latest request."
+        )
+    tradeoff = plan.get("tradeoff_summary")
+    if tradeoff and tradeoff not in message:
+        message = f"{message} {tradeoff}"
+    return message
 
 
 def build_recommendation(
@@ -198,7 +321,17 @@ def build_recommendation(
     if latest_parsed["restore_original"]:
         current_recommendation = None
         conversation = []
-    for metric, value in parsed["minimums"].items():
+    parsed["preservation_minimums"] = _refinement_preservation_minimums(
+        current_recommendation,
+        latest_parsed,
+    )
+    effective_minimums = dict(parsed["minimums"])
+    for metric, value in parsed["preservation_minimums"].items():
+        effective_minimums[metric] = max(
+            float(effective_minimums.get(metric, 0)),
+            float(value),
+        )
+    for metric, value in effective_minimums.items():
         requirements[metric] = float(value)
 
     segment_descriptors = deepcopy(parsed.get("segments", []))
@@ -206,7 +339,7 @@ def build_recommendation(
         segment_descriptors,
         usage_analysis["weighted_monthly_estimate"],
     )
-    _apply_explicit_segment_targets(segments, parsed["minimums"])
+    _apply_explicit_segment_targets(segments, effective_minimums)
     if segments:
         for metric in METRICS:
             requirements[metric] = sum(
@@ -218,12 +351,8 @@ def build_recommendation(
         raise ValueError("The package catalogue is temporarily unavailable.")
 
     context = _decision_context(
-        user,
         destination,
-        start_date,
-        end_date,
         trip_days,
-        usage_analysis,
         requirements,
         packages,
         parsed,
@@ -232,9 +361,14 @@ def build_recommendation(
     )
 
     plan = None
+    gemini_rate_limited = False
     api_key = current_app.config.get("GEMINI_API_KEY", "")
     model = current_app.config.get("GEMINI_MODEL", "gemini-3.5-flash")
-    timeout = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 30)
+    timeout = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 45)
+    rate_limit_cooldown = current_app.config.get(
+        "GEMINI_RATE_LIMIT_COOLDOWN_SECONDS",
+        60,
+    )
     request_log_dir = current_app.config.get("GEMINI_REQUEST_LOG_DIR")
     try:
         decision = request_recommendation_decision(
@@ -244,6 +378,7 @@ def build_recommendation(
             timeout_seconds=timeout,
             client=gemini_client,
             request_log_dir=request_log_dir,
+            rate_limit_cooldown_seconds=rate_limit_cooldown,
         )
         plan, errors = validate_recommendation_decision(
             decision,
@@ -268,6 +403,7 @@ def build_recommendation(
                 ),
                 validation_errors=errors,
                 request_log_dir=request_log_dir,
+                rate_limit_cooldown_seconds=rate_limit_cooldown,
             )
             plan, errors = validate_recommendation_decision(
                 corrected,
@@ -279,7 +415,8 @@ def build_recommendation(
             )
             if errors:
                 raise GeminiUnavailable("Gemini did not return a valid corrected plan.")
-    except GeminiUnavailable:
+    except GeminiUnavailable as error:
+        gemini_rate_limited = isinstance(error, GeminiRateLimited)
         LOGGER.info("Deterministic fallback used")
         plan = optimize_package_plan(
             packages,
@@ -291,12 +428,17 @@ def build_recommendation(
             minimum_validity_days=parsed["minimum_validity_days"],
             segments=segments,
             current_selection=(current_recommendation or {}).get("selection"),
+            trip_wide_minimums={
+                metric: requirements[metric]
+                for metric in parsed.get("trip_wide_metrics", [])
+                if metric in requirements
+            } if not segments else None,
         )
         plan["latest_request_interpretation"] = (
             parsed["interpretation"] if parsed["latest_message"] else None
         )
         plan["modification_summary"] = (
-            "The plan was recalculated to reflect the latest instruction."
+            "The available package options were reviewed against the latest instruction."
             if parsed["latest_message"]
             else None
         )
@@ -331,9 +473,17 @@ def build_recommendation(
         "modification_summary": plan.get("modification_summary"),
         "tradeoff_summary": plan.get("tradeoff_summary"),
         "source": plan.get("source", "gemini"),
+        "gemini_rate_limited": gemini_rate_limited,
         "_active_requirements": {
             **deepcopy(parsed),
             "segments": segment_descriptors,
         },
     }
+    if parsed.get("latest_message"):
+        response["chat_message"] = _refinement_chat_message(
+            plan,
+            current_recommendation,
+            gemini_rate_limited=gemini_rate_limited,
+        )
+        response["modification_summary"] = response["chat_message"]
     return response

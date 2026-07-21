@@ -99,8 +99,21 @@ def _candidate_score(candidate, trip_days, requirements, exact_targets, preferen
     allowance_waste = _normalized_waste(totals, requirements, exact_targets)
     activations = len(candidate["packages"])
     price = totals["price_aed"]
+    focus_score = 0.0
+    if "focus_calls" in preferences:
+        focus_score -= (
+            totals["local_minutes"] + totals["international_minutes"]
+        ) / max(price, 1.0)
+    if "focus_data" in preferences:
+        focus_score -= totals["data_gb"] / max(price, 1.0)
+    if "focus_sms" in preferences:
+        focus_score -= totals["sms"] / max(price, 1.0)
     if "fewer_activations" in preferences:
         return duration_waste, activations, price, allowance_waste
+    if any(preference.startswith("focus_") for preference in preferences):
+        if "cheaper" in preferences or "budget_limited" in preferences:
+            return duration_waste, price, focus_score, allowance_waste, activations
+        return duration_waste, focus_score, price, allowance_waste, activations
     return duration_waste, price, allowance_waste, activations
 
 
@@ -114,6 +127,49 @@ def _partial_score(candidate, requirements):
     return deficit, totals["price_aed"], len(candidate["packages"])
 
 
+def _coverage_allocations(packages, coverage_days):
+    if len(packages) > coverage_days:
+        raise ValueError("Every package activation needs at least one covered travel day.")
+
+    remaining_days = coverage_days
+    allocations = []
+    for index, package in enumerate(packages):
+        remaining_activations = len(packages) - index - 1
+        covered_days = min(
+            package.validity_days,
+            remaining_days - remaining_activations,
+        )
+        if covered_days < 1:
+            raise ValueError("The selected activations cannot be scheduled within the trip.")
+        allocations.append(covered_days)
+        remaining_days -= covered_days
+    if remaining_days:
+        raise ValueError("The selected package validity does not cover the requested period.")
+    return allocations
+
+
+def _supports_trip_wide_minimums(packages, trip_days, trip_wide_minimums):
+    if not trip_wide_minimums:
+        return True
+    try:
+        allocations = _coverage_allocations(packages, trip_days)
+    except ValueError:
+        return False
+
+    for package, covered_days in zip(packages, allocations):
+        share = covered_days / trip_days
+        for metric, field in METRIC_FIELDS.items():
+            required = float(trip_wide_minimums.get(metric, 0)) * share
+            if _value(package, field) + 1e-9 < required:
+                return False
+        if "total_call_minutes" in trip_wide_minimums:
+            required_calls = float(trip_wide_minimums["total_call_minutes"]) * share
+            available_calls = package.local_minutes + package.international_minutes
+            if available_calls + 1e-9 < required_calls:
+                return False
+    return True
+
+
 def _search(
     packages,
     trip_days,
@@ -125,6 +181,7 @@ def _search(
     exact_only=False,
     current_selection=None,
     enforce_comparatives=True,
+    trip_wide_minimums=None,
 ):
     active = sorted(
         (
@@ -163,6 +220,10 @@ def _search(
                     requirements,
                     maximum_price_aed,
                     minimum_validity_days,
+                ) and _supports_trip_wide_minimums(
+                    next_candidate["packages"],
+                    trip_days,
+                    trip_wide_minimums,
                 ) and (
                     not enforce_comparatives
                     or _meets_comparative_preferences(
@@ -211,23 +272,7 @@ def _compress_items(
     """Assign every activation to real trip days and combine safe repeats."""
 
     coverage_days = coverage_days or sum(package.validity_days for package in packages)
-    if len(packages) > coverage_days:
-        raise ValueError("Every package activation needs at least one covered travel day.")
-
-    remaining_days = coverage_days
-    allocations = []
-    for index, package in enumerate(packages):
-        remaining_activations = len(packages) - index - 1
-        covered_days = min(
-            package.validity_days,
-            remaining_days - remaining_activations,
-        )
-        if covered_days < 1:
-            raise ValueError("The selected activations cannot be scheduled within the trip.")
-        allocations.append(covered_days)
-        remaining_days -= covered_days
-    if remaining_days:
-        raise ValueError("The selected package validity does not cover the requested period.")
+    allocations = _coverage_allocations(packages, coverage_days)
 
     items = []
     coverage_cursor = day_offset + 1
@@ -323,6 +368,7 @@ def optimize_package_plan(
     segments=None,
     exact_only=False,
     current_selection=None,
+    trip_wide_minimums=None,
 ):
     """Return a valid package selection using a bounded duration DP/beam search."""
 
@@ -432,6 +478,7 @@ def optimize_package_plan(
                     exact_only=exact_only,
                     current_selection=current_selection,
                     enforce_comparatives=enforce_comparatives,
+                    trip_wide_minimums=trip_wide_minimums,
                 )
                 relaxed_constraints = relaxed
                 break
@@ -483,13 +530,20 @@ def optimize_package_plan(
     }
 
 
-def exact_valid_plan_exists(packages, trip_days, requirements):
+def exact_valid_plan_exists(
+    packages,
+    trip_days,
+    requirements,
+    *,
+    trip_wide_minimums=None,
+):
     try:
         optimize_package_plan(
             packages,
             trip_days,
             requirements,
             exact_only=True,
+            trip_wide_minimums=trip_wide_minimums,
         )
         return True
     except ValueError:

@@ -299,12 +299,30 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     page.locator("#dates-next").click()
     expect(page.locator("#average-data")).to_have_text("2.1 GB")
 
+    send_adjustment = page.locator("#send-roaming-adjustment")
+    expect(send_adjustment).to_be_disabled()
+    expect(send_adjustment).to_have_css("background-color", "rgb(230, 231, 234)")
+    package_codes_before_greeting = page.locator(
+        "#usage-plan-items .plan-item"
+    ).evaluate_all("(items) => items.map((item) => item.dataset.packageCode)")
+    page.locator("#roaming-adjustment").fill("Hello")
+    send_adjustment.click()
+    expect(page.locator("#roaming-chat-messages .chat-message")).to_have_count(2)
+    expect(page.locator("#roaming-chat-messages .chat-message").last).to_contain_text(
+        "How can I help with your roaming plan?"
+    )
+    assert page.locator("#usage-plan-items .plan-item").evaluate_all(
+        "(items) => items.map((item) => item.dataset.packageCode)"
+    ) == package_codes_before_greeting
     page.locator("#roaming-adjustment").fill(
         "For the first week I will have Wi-Fi and need light usage, and I need heavy data in the second week."
     )
-    page.locator("#send-roaming-adjustment").click()
+    expect(send_adjustment).to_be_enabled()
+    expect(send_adjustment).to_have_css("background-color", "rgb(230, 0, 0)")
+    send_adjustment.click()
+    expect(send_adjustment).to_be_disabled()
     expect(page.locator("#usage-segment-timeline")).to_be_visible()
-    expect(page.locator("#roaming-chat-messages .chat-message")).to_have_count(2)
+    expect(page.locator("#roaming-chat-messages .chat-message")).to_have_count(4)
     expect(page.locator("#usage-segment-timeline .segment-card")).to_have_count(2)
     expect(page.locator("#usage-plan-items .plan-item")).not_to_have_count(0)
     expect(page.locator('[data-testid="current-usage-recommendation"]')).to_have_count(1)

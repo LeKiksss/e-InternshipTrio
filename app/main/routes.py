@@ -18,11 +18,66 @@ from app.models import (
 from app.services.mock_bill_analysis import analyse_bill
 from app.services.mock_complaints import classify_complaint
 from app.services.mock_diagnostics import result_for_state
+from app.services.roaming_chat_intent import classify_roaming_chat_intent
+from app.services.roaming_history import (
+    append_recommendation_history,
+    clear_recommendation_history,
+    get_original_history_entry,
+    get_previous_history_entry,
+    start_recommendation_history,
+)
 from app.services.roaming_recommendation import build_recommendation
 
 
 main_bp = Blueprint("main", __name__)
 WORKFLOW_NAMES = {"network", "bill", "complaints", "roaming"}
+
+
+def _append_roaming_conversation(conversation, user_message, assistant_message):
+    conversation.extend(
+        [
+            {"role": "user", "message": user_message[:500]},
+            {"role": "assistant", "message": assistant_message[:500]},
+        ]
+    )
+    return conversation[-12:]
+
+
+def _ensure_roaming_history(current):
+    journey_id = session.get("roaming_history_journey_id")
+    cursor_id = session.get("roaming_history_cursor_id")
+    if journey_id and cursor_id:
+        return journey_id, cursor_id
+    entry = start_recommendation_history(current_user.id, current)
+    session["roaming_history_journey_id"] = entry.journey_id
+    session["roaming_history_cursor_id"] = entry.id
+    return entry.journey_id, entry.id
+
+
+def _restore_roaming_history_entry(entry, message, conversation, action):
+    recommendation = entry.recommendation()
+    if action == "original":
+        reply = "Restored the original package recommendation."
+    else:
+        reply = "Restored the previous package recommendation."
+    recommendation["modification_summary"] = reply
+    recommendation["chat_message"] = reply
+    session["roaming_current_recommendation"] = recommendation
+    session["roaming_history_cursor_id"] = entry.id
+    session["roaming_conversation"] = _append_roaming_conversation(
+        conversation,
+        message,
+        reply,
+    )
+    session.modified = True
+    return jsonify(
+        {
+            "ok": True,
+            "response_type": "recommendation",
+            "history_action": action,
+            **recommendation,
+        }
+    )
 
 
 @main_bp.get("/")
@@ -215,8 +270,11 @@ def roaming_recommend():
         )
     except ValueError as error:
         return jsonify({"ok": False, "message": str(error)}), 400
+    history_entry = start_recommendation_history(current_user.id, recommendation)
     session["roaming_current_recommendation"] = recommendation
     session["roaming_conversation"] = []
+    session["roaming_history_journey_id"] = history_entry.journey_id
+    session["roaming_history_cursor_id"] = history_entry.id
     session.modified = True
     return jsonify({"ok": True, **recommendation})
 
@@ -242,6 +300,61 @@ def roaming_refine():
     conversation = session.get("roaming_conversation", [])
     if not isinstance(conversation, list):
         conversation = []
+    journey_id, cursor_id = _ensure_roaming_history(current)
+    intent = classify_roaming_chat_intent(message)
+    if intent["kind"] == "greeting":
+        reply = intent["reply"]
+        session["roaming_conversation"] = _append_roaming_conversation(
+            conversation,
+            message,
+            reply,
+        )
+        session.modified = True
+        return jsonify(
+            {
+                "ok": True,
+                "response_type": "message",
+                "message": reply,
+                "recommendation_id": current["recommendation_id"],
+            }
+        )
+    if intent["kind"] == "original":
+        original = get_original_history_entry(current_user.id, journey_id)
+        if original is not None:
+            return _restore_roaming_history_entry(
+                original,
+                message,
+                conversation,
+                "original",
+            )
+    if intent["kind"] == "previous":
+        previous = get_previous_history_entry(
+            current_user.id,
+            journey_id,
+            cursor_id,
+        )
+        if previous is not None:
+            return _restore_roaming_history_entry(
+                previous,
+                message,
+                conversation,
+                "previous",
+            )
+        reply = "You are already viewing the earliest recommendation in this path."
+        session["roaming_conversation"] = _append_roaming_conversation(
+            conversation,
+            message,
+            reply,
+        )
+        session.modified = True
+        return jsonify(
+            {
+                "ok": True,
+                "response_type": "message",
+                "message": reply,
+                "recommendation_id": current["recommendation_id"],
+            }
+        )
     try:
         recommendation = build_recommendation(
             current_user,
@@ -254,16 +367,30 @@ def roaming_refine():
         )
     except ValueError as error:
         return jsonify({"ok": False, "message": str(error)}), 400
-    conversation.extend(
-        [
-            {"role": "user", "message": message[:500]},
-            {"role": "assistant", "message": recommendation.get("modification_summary") or recommendation["reason"]},
-        ]
+    assistant_message = (
+        recommendation.get("chat_message")
+        or recommendation.get("modification_summary")
+        or recommendation.get("tradeoff_summary")
+        or recommendation["reason"]
     )
-    session["roaming_conversation"] = conversation[-12:]
+    if recommendation["recommendation_id"] != current["recommendation_id"]:
+        history_entry = append_recommendation_history(
+            current_user.id,
+            journey_id,
+            cursor_id,
+            recommendation,
+        )
+        session["roaming_history_cursor_id"] = history_entry.id
+    session["roaming_conversation"] = _append_roaming_conversation(
+        conversation,
+        message,
+        assistant_message,
+    )
     session["roaming_current_recommendation"] = recommendation
     session.modified = True
-    return jsonify({"ok": True, **recommendation})
+    return jsonify(
+        {"ok": True, "response_type": "recommendation", **recommendation}
+    )
 
 
 @main_bp.get("/api/roaming/current")
@@ -368,6 +495,9 @@ def reset_demo():
     session.pop("saved_roaming_recommendations", None)
     session.pop("roaming_current_recommendation", None)
     session.pop("roaming_conversation", None)
+    session.pop("roaming_history_journey_id", None)
+    session.pop("roaming_history_cursor_id", None)
     session.modified = True
+    clear_recommendation_history(current_user.id)
     seed_database()
     return jsonify({"ok": True, "message": "Account data has been restored."})

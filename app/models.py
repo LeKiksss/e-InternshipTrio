@@ -169,6 +169,35 @@ class UserMonthlyUsage(db.Model):
         }
 
 
+class RoamingRecommendationHistory(db.Model):
+    """Server-side package history for one roaming recommendation journey."""
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "journey_id",
+            "sequence_number",
+            name="uq_roaming_history_journey_sequence",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey("user.id"),
+        nullable=False,
+        index=True,
+    )
+    journey_id = db.Column(db.String(64), nullable=False, index=True)
+    sequence_number = db.Column(db.Integer, nullable=False)
+    previous_history_id = db.Column(db.Integer, nullable=True)
+    recommendation_id = db.Column(db.String(64), nullable=False, index=True)
+    recommendation_json = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+
+    def recommendation(self):
+        return json.loads(self.recommendation_json)
+
+
 class ComplaintTicket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)

@@ -32,6 +32,35 @@ CURRENT = {
 def test_numeric_requirements(message, field, value):
     parsed = parse_user_requirements(message, CURRENT, 14)
     assert parsed["minimums"][field] == value
+    assert field in parsed["trip_wide_metrics"]
+
+
+def test_trip_wide_correction_inherits_the_active_metric_and_clears_segments():
+    initial = parse_user_requirements("I need 200 local minutes", CURRENT, 3)
+    previous = {
+        **initial,
+        "segments": [
+            {
+                "segment_id": "segment-1",
+                "start_day": 1,
+                "end_day": 1,
+            }
+        ],
+    }
+    current = {**CURRENT, "_active_requirements": previous}
+
+    correction = parse_user_requirements(
+        "No, 200 across the 3 days",
+        current,
+        3,
+    )
+    merged = merge_requirement_state(previous, correction)
+
+    assert correction["minimums"] == {"local_minutes": 200}
+    assert correction["trip_wide_metrics"] == ["local_minutes"]
+    assert correction["whole_trip_mentioned"] is True
+    assert merged["segments"] == []
+    assert merged["minimums"]["local_minutes"] == 200
 
 
 def test_only_and_zero_requirements_override_history():
@@ -78,9 +107,43 @@ def test_price_validity_and_comparatives_are_parsed_against_current_plan():
 
 
 def test_restore_original_is_recognized():
-    assert parse_user_requirements(
-        "Restore my original recommendation", CURRENT, 14
-    )["restore_original"]
+    for message in (
+        "Restore my original recommendation",
+        "Can I get the original plan you recommended?",
+        "Return me to the initial package",
+    ):
+        assert parse_user_requirements(message, CURRENT, 14)["restore_original"]
+
+
+def test_colloquial_budget_call_focus_and_nevermind_are_parsed():
+    parsed = parse_user_requirements(
+        "nevermind can we go cheap but focus on calls my budget is like 30dhs",
+        CURRENT,
+        3,
+    )
+
+    assert parsed["reset_constraints"] is True
+    assert parsed["maximum_price_aed"] == 30
+    assert {"budget_limited", "cheaper", "focus_calls"}.issubset(
+        parsed["comparative"]
+    )
+    assert {"local_minutes", "international_minutes"}.issubset(
+        parsed["affected_metrics"]
+    )
+
+
+def test_nevermind_discards_previous_constraints_before_merging():
+    previous = parse_user_requirements("I need 200 local minutes", CURRENT, 3)
+    latest = parse_user_requirements(
+        "Never mind, go cheap with a budget of AED 30",
+        CURRENT,
+        3,
+    )
+    merged = merge_requirement_state(previous, latest)
+
+    assert "local_minutes" not in merged["minimums"]
+    assert merged["maximum_price_aed"] == 30
+    assert "cheaper" in merged["comparative"]
 
 
 def test_temporal_segments_cover_every_day_once():

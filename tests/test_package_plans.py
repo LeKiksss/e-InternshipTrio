@@ -106,6 +106,57 @@ def test_valid_segmented_plan_checks_each_period(app):
         }
 
 
+def test_trip_wide_minimum_cannot_be_confined_to_the_final_day(app):
+    requirements = {
+        "data_gb": 1.487,
+        "local_minutes": 200,
+        "international_minutes": 11,
+        "sms": 4,
+    }
+    mixed_daily_plan = [
+        item("ESS-1D", 1, 1, 1, 1),
+        item("RLH-1D", 1, 2, 2, 2),
+        item("VF-1D", 1, 3, 3, 3),
+    ]
+    parsed = {
+        "minimums": {"local_minutes": 200},
+        "trip_wide_metrics": ["local_minutes"],
+        "segments": [],
+    }
+
+    with app.app_context():
+        plan, errors = validate_recommendation_decision(
+            decision(mixed_daily_plan),
+            active_packages(),
+            3,
+            requirements,
+            parsed_requirements=parsed,
+        )
+
+    assert plan is None
+    assert any("throughout" in error for error in errors)
+
+
+def test_validator_rejects_reducing_an_untouched_current_allowance(app):
+    with app.app_context():
+        plan, errors = validate_recommendation_decision(
+            decision([item("VF-3D", 1, 1, 3, 1)]),
+            active_packages(),
+            3,
+            LOW,
+            parsed_requirements={
+                "preservation_minimums": {
+                    "data_gb": 3,
+                    "international_minutes": 225,
+                    "sms": 60,
+                }
+            },
+        )
+
+    assert plan is None
+    assert any("data" in error for error in errors)
+
+
 @pytest.mark.parametrize(
     ("items", "error_fragment"),
     [

@@ -22,8 +22,9 @@ Authenticated user
   -> Gemini structured decision when configured
   -> Python package, arithmetic, allowance, segment, and coverage validation
   -> one Gemini correction attempt if required
-  -> bounded deterministic optimizer when Gemini is unavailable or invalid
+  -> rate-limit cooldown plus bounded deterministic optimizer when Gemini is unavailable or invalid
   -> validated single, repeated, mixed, or segmented package plan
+  -> server-side history for previous/original package navigation
 ```
 
 ## Technology stack
@@ -52,7 +53,7 @@ Python 3.11 and newer are supported. Python 3.14.2 is suitable; the GitHub Actio
 | Roaming | Usage analysis, 42-package catalogue, Gemini reasoning, deterministic fallback, plan sequences, refinements, session saves | Package activation and dialer actions do not change a live account |
 | Profile | Persisted profile and preference edits, links to account activity | Email remains read-only in this application |
 
-Gemini is the only optional external service. When configured, the backend sends anonymous user ID, trip context, raw usage measurements, calculated requirements, conversation context, and the active package catalogue. It does not send email, phone number, password, password hash, cookies, or authentication tokens.
+Gemini is the only optional external service. When configured, the backend sends only the destination, trip length, calculated requirements, requirement scope, and a compact version of the active package catalogue. Refinements also include the latest instruction, active constraints, current package plan, and up to four recent chat messages. It does not send user IDs, raw usage history, email, phone number, password, password hash, cookies, or authentication tokens.
 
 ## Main product areas
 
@@ -71,6 +72,7 @@ The runtime database is `instance/prototype.db`. Both `instance/` and database f
 | `User` | Identity, contact information, Argon2 password hash, and preferences |
 | `UserMonthlyUsage` | One raw usage row per user/month for data, local minutes, international minutes, and SMS |
 | `RoamingPackage` | Complete package facts, including code, family, duration, price, allowances, activation code, and stacking flags |
+| `RoamingRecommendationHistory` | Validated package versions and parent links for previous/original chat navigation |
 | `BillRecord` | Confirmed bill totals, charge groups, due date, and anomaly summary |
 | `DiagnosticResult` | Saved download, upload, latency, location label, and verdict |
 | `ComplaintTicket` | Ticket details, status, routing, expected resolution, and notes |
@@ -110,11 +112,13 @@ Existing unrelated users, bills, complaints, diagnostics, and other records are 
 - Package requirements use the calculated trip estimate directly, without an added safety margin.
 - The UI and package validator use the same values shown under “Your Average Usage in X Days.”
 
-`app/services/user_requirement_parser.py` extracts explicit GB, local/international/general minutes, SMS, price, validity, zero-use requests, comparative requests, and temporal phrases. Newer conflicting input replaces older input, while unrelated explicit constraints remain active.
+`app/services/user_requirement_parser.py` extracts explicit GB, local/international/general minutes, SMS, price, validity, zero-use requests, comparative requests, and temporal phrases. Newer conflicting input replaces older input, while unrelated explicit constraints remain active. Numeric requirements apply across the full trip unless the user explicitly defines different periods. Each refinement also preserves the current plan's totals for every allowance the latest message did not ask to change.
 
 `app/services/package_fallback_optimizer.py` uses a bounded, canonicalized search rather than uncontrolled brute force. It can select one package, repeat a package, mix families, produce exact-duration combinations, and optimize each requested trip segment independently.
 
 `app/services/recommendation_validator.py` reloads every package fact from SQLite and recalculates all totals. Gemini-supplied price, allowance, validity, activation code, or arithmetic is never trusted.
+
+Standalone greetings and package-history navigation are handled locally without an API call. Distinct validated recommendations are stored server-side for the active journey, allowing repeated “previous package” navigation and exact restoration of the original recommendation. Colloquial budget, reset, and service-focus phrases also have deterministic handling when Gemini is unavailable.
 
 ## Gemini configuration
 
@@ -127,6 +131,8 @@ Gemini is called only by the Flask backend. The API key is never included in Jav
 ```dotenv
 GEMINI_API_KEY=
 GEMINI_MODEL=gemini-3.5-flash
+GEMINI_TIMEOUT_SECONDS=45
+GEMINI_RATE_LIMIT_COOLDOWN_SECONDS=60
 GEMINI_REQUEST_LOG_DIR=instance/api_request_logs
 ```
 
@@ -143,7 +149,9 @@ The Gemini service uses:
 - `google-genai`, not the deprecated `google-generativeai` package
 - Pydantic JSON schema output
 - High thinking level with Gemini's default sampling configuration
-- The complete active package catalogue
+- The complete active package catalogue with only the fields needed for selection
+- Compact request context and a 45-second request timeout
+- A provider-directed rate-limit cooldown (60-second fallback) so consecutive chat messages do not repeatedly hit an exhausted quota
 - One validation-guided correction attempt
 - Backend-only error handling with no raw model response exposed to the browser
 
@@ -191,6 +199,8 @@ UI POC/
 |   |   |-- gemini_recommender.py   Backend structured Gemini request/response models
 |   |   |-- recommendation_validator.py Package facts, coverage, totals, segments, constraints
 |   |   |-- package_fallback_optimizer.py Bounded deterministic package-plan search
+|   |   |-- roaming_chat_intent.py  Greetings and package-history navigation intents
+|   |   |-- roaming_history.py      Server-side recommendation history and parent navigation
 |   |   |-- roaming_recommendation.py End-to-end recommendation orchestration
 |   |   |-- mock_diagnostics.py     Deterministic network result values
 |   |   |-- mock_bill_analysis.py   Bill anomaly and plan-review calculations
@@ -212,6 +222,7 @@ UI POC/
 |   |-- test_gemini_recommender.py  Structured requests, correction retry, errors, and fallback
 |   |-- test_refinement_behavior.py Explicit and comparative refinement enforcement
 |   |-- test_roaming_api.py         Authentication, current-user isolation, APIs, and saved plans
+|   |-- test_roaming_chat_intent.py Greetings and previous/original navigation language
 |   `-- browser/                    Playwright end-to-end customer journeys and console audit
 |-- instance/                       Local runtime database and backups; created and ignored
 |-- .github/workflows/tests.yml     Windows/Linux CI matrix for Python 3.11 and 3.14

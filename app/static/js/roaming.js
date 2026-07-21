@@ -44,7 +44,7 @@
 
     function cleanRecommendation(response) {
       const recommendation = { ...response };
-      delete recommendation.ok;
+      delete recommendation.ok; delete recommendation.response_type; delete recommendation.history_action;
       return recommendation;
     }
     function resetRecommendationState() {
@@ -193,6 +193,9 @@
       controller.state.chat.forEach((message) => { const node = document.createElement("div"); node.className = `chat-message ${message.who}`; node.textContent = message.text; box.append(node); });
       if (controller.state.chat.length) box.scrollTop = box.scrollHeight;
     }
+    function syncAdjustmentButton() {
+      $("#send-roaming-adjustment").disabled = !$("#roaming-adjustment").value.trim();
+    }
     function renderRecent() {
       const recommendation = controller.state.recommendation;
       if (!controller.state.completed || !recommendation) return;
@@ -208,14 +211,20 @@
       const value = (text || $("#roaming-adjustment").value).trim();
       if (!value || !controller.state.recommendationId) { toast("Enter an adjustment first.", "error"); return; }
       $("#roaming-adjustment").value = "";
+      syncAdjustmentButton();
       controller.update({ chat: [...controller.state.chat, { who: "user", text: value }, { who: "assistant", text: "Reviewing that adjustment…" }] }, false); renderChat();
       await delay(window.PROTOTYPE?.testing ? 20 : 400);
       try {
         const response = await api("/api/roaming/refine", { method: "POST", body: { current_recommendation_id: controller.state.recommendationId, message: value } });
+        if (response.response_type === "message") {
+          const updatedChat = [...controller.state.chat.slice(0, -1), { who: "assistant", text: response.message }];
+          controller.update({ chat: updatedChat }, false); renderChat();
+          return;
+        }
         const recommendation = cleanRecommendation(response);
-        const updatedChat = [...controller.state.chat.slice(0, -1), { who: "assistant", text: recommendation.modification_summary || recommendation.tradeoff_summary || recommendation.reason }];
+        const updatedChat = [...controller.state.chat.slice(0, -1), { who: "assistant", text: recommendation.chat_message || recommendation.modification_summary || recommendation.tradeoff_summary || recommendation.reason }];
         controller.update({ recommendation, recommendationId: recommendation.recommendation_id, chat: updatedChat, savedId: null, completed: false, carrierAcknowledged: false });
-        renderRecommendation(); renderChat(); toast("Recommendation updated.");
+        renderRecommendation(); renderChat(); toast(response.history_action ? "Recommendation restored." : "Recommendation reviewed.");
       } catch (error) {
         controller.update({ chat: [...controller.state.chat.slice(0, -1), { who: "assistant", text: error.message }] }, false); renderChat(); toast(error.message, "error");
       }
@@ -273,6 +282,7 @@
     $("#dates-next").addEventListener("click", loadRecommendation);
     $("#usage-more-details").addEventListener("click", (event) => { const open = $("#usage-details-panel").classList.toggle("open"); event.currentTarget.setAttribute("aria-expanded", String(open)); event.currentTarget.firstChild.textContent = open ? "Hide details " : "More details "; });
     $("#send-roaming-adjustment").addEventListener("click", () => submitAdjustment());
+    $("#roaming-adjustment").addEventListener("input", syncAdjustmentButton);
     $("#roaming-adjustment").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submitAdjustment(); } });
     $("#carrier-acknowledgement").addEventListener("change", (event) => { controller.update({ carrierAcknowledged: event.currentTarget.checked }); renderAcknowledgement(); if (event.currentTarget.checked) toast("Network note acknowledged. Activation codes are now available."); });
     $("#continue-roaming-plan").addEventListener("click", () => { controller.update({ completed: true, viewingSaved: false }); controller.go("result"); });
@@ -286,6 +296,7 @@
     $("#open-dialer").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) return; const first = expandedActivations()[0]; if (!first) return; confirmAction({ title: "Open your dialer?", message: "The first activation code will be placed in the dialer. Nothing is activated automatically.", action: "Open dialer", onConfirm: () => { window.location.href = `tel:${first.code.replace(/#/g, "%23")}`; } }); });
 
     await controller.restore();
+    syncAdjustmentButton();
     await restoreCurrentRecommendation();
     await loadSavedRecommendations();
   });

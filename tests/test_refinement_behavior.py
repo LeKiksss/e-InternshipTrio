@@ -2,7 +2,10 @@ import pytest
 
 from app.models import RoamingPackage, User
 from app.services.package_fallback_optimizer import optimize_package_plan
-from app.services.roaming_recommendation import build_recommendation
+from app.services.roaming_recommendation import (
+    _refinement_preservation_minimums,
+    build_recommendation,
+)
 from app.services.user_requirement_parser import parse_user_requirements
 
 
@@ -22,6 +25,12 @@ CURRENT = {
         "total_validity_days": 7,
         "activation_count": 3,
     }
+}
+ALLOWANCE_TOTAL_FIELDS = {
+    "data_gb": "total_data_gb",
+    "local_minutes": "total_local_minutes",
+    "international_minutes": "total_international_minutes",
+    "sms": "total_sms",
 }
 
 
@@ -51,8 +60,137 @@ def test_numeric_and_more_requests_are_hard_constraints(app, message, metric, mi
             exact_targets=parsed["exact_targets"],
             preferences=parsed["comparative"],
             current_selection=CURRENT["selection"],
+            trip_wide_minimums={
+                field: requirements[field]
+                for field in parsed["trip_wide_metrics"]
+            },
         )
         assert plan["selection"][metric] >= minimum
+
+
+@pytest.mark.parametrize(
+    ("message", "changed_metrics"),
+    [
+        ("I need 10 GB", {"data_gb"}),
+        ("I need 200 local minutes", {"local_minutes"}),
+        ("I need 100 international minutes", {"international_minutes"}),
+        ("I need 75 SMS", {"sms"}),
+        ("I need 300 call minutes", {"local_minutes", "international_minutes"}),
+    ],
+)
+def test_refinement_preserves_every_untouched_current_allowance(
+    message,
+    changed_metrics,
+):
+    parsed = parse_user_requirements(message, CURRENT, 7)
+    minimums = _refinement_preservation_minimums(CURRENT, parsed)
+
+    assert set(minimums) == set(ALLOWANCE_TOTAL_FIELDS) - changed_metrics
+    for metric, value in minimums.items():
+        assert value == CURRENT["selection"][ALLOWANCE_TOTAL_FIELDS[metric]]
+
+
+def test_sequential_refinements_preserve_the_immediately_previous_plan(app):
+    steps = (
+        ("I need 200 local minutes", "local_minutes", 200),
+        ("I need 70 SMS", "sms", 70),
+        ("I need 5 GB", "data_gb", 5),
+        ("I need 300 international minutes", "international_minutes", 300),
+    )
+
+    with app.app_context():
+        omar = User.query.filter_by(email="omar@example.test").one()
+        current = build_recommendation(
+            omar, "France", "2030-08-01", "2030-08-03"
+        )
+
+        for message, changed_metric, requested_value in steps:
+            previous = current
+            current = build_recommendation(
+                omar,
+                "France",
+                "2030-08-01",
+                "2030-08-03",
+                latest_message=message,
+                current_recommendation=previous,
+            )
+
+            assert (
+                current["selection"][ALLOWANCE_TOTAL_FIELDS[changed_metric]]
+                >= requested_value
+            )
+            expected_preservation = {}
+            for metric, total_field in ALLOWANCE_TOTAL_FIELDS.items():
+                if metric == changed_metric:
+                    continue
+                previous_total = previous["selection"][total_field]
+                expected_preservation[metric] = previous_total
+                assert current["selection"][total_field] >= previous_total
+            assert current["_active_requirements"]["preservation_minimums"] == (
+                expected_preservation
+            )
+
+
+def test_unchanged_plan_is_reported_truthfully_instead_of_claiming_recalculation(app):
+    with app.app_context():
+        omar = User.query.filter_by(email="omar@example.test").one()
+        initial = build_recommendation(
+            omar, "France", "2030-08-01", "2030-08-03"
+        )
+        reviewed = build_recommendation(
+            omar,
+            "France",
+            "2030-08-01",
+            "2030-08-03",
+            latest_message="Please review the package again",
+            current_recommendation=initial,
+        )
+
+    assert reviewed["selection"] == initial["selection"]
+    assert "kept it unchanged" in reviewed["chat_message"]
+    assert "recalculated" not in reviewed["chat_message"].lower()
+
+
+def test_omar_local_minutes_apply_across_all_three_days_and_survive_correction(app):
+    with app.app_context():
+        omar = User.query.filter_by(email="omar@example.test").one()
+        initial = build_recommendation(
+            omar, "France", "2030-08-01", "2030-08-03"
+        )
+        requested = build_recommendation(
+            omar,
+            "France",
+            "2030-08-01",
+            "2030-08-03",
+            latest_message="I need 200 local minutes",
+            current_recommendation=initial,
+        )
+
+        assert requested["_active_requirements"]["minimums"]["local_minutes"] == 200
+        assert requested["_active_requirements"]["trip_wide_metrics"] == [
+            "local_minutes"
+        ]
+        assert requested["segments"] == []
+        assert [
+            (item["package_code"], item["coverage_start_day"], item["coverage_end_day"])
+            for item in requested["selection"]["items"]
+        ] == [("VP-3D", 1, 3)]
+
+        corrected = build_recommendation(
+            omar,
+            "France",
+            "2030-08-01",
+            "2030-08-03",
+            latest_message="No, 200 across the 3 days",
+            current_recommendation=requested,
+        )
+
+        assert corrected["selection"] == requested["selection"]
+        assert corrected["_active_requirements"]["minimums"]["local_minutes"] == 200
+        assert corrected["_active_requirements"]["trip_wide_metrics"] == [
+            "local_minutes"
+        ]
+        assert corrected["_active_requirements"]["segments"] == []
 
 
 @pytest.mark.parametrize(

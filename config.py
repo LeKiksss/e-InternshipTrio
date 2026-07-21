@@ -36,7 +36,10 @@ class Config:
     MAX_CONTENT_LENGTH = 10 * 1024 * 1024
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
-    GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "30"))
+    GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "45"))
+    GEMINI_RATE_LIMIT_COOLDOWN_SECONDS = float(
+        os.getenv("GEMINI_RATE_LIMIT_COOLDOWN_SECONDS", "60")
+    )
     GEMINI_REQUEST_LOG_DIR = os.getenv(
         "GEMINI_REQUEST_LOG_DIR",
         str(BASE_DIR / "instance" / "api_request_logs"),
