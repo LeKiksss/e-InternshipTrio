@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "989134311482",
+    "project_id": "e-insights-uae",
+    "storage_bucket": "e-insights-uae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:989134311482:android:fd4fcb7526b4dee3cc2503",
+        "android_client_info": {
+          "package_name": "com.example.e_insights"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCPrlhvEW4Ar1nzBbhCdAokx5at453pamA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
