@@ -86,3 +86,8 @@ def login_demo(page, live_app_url):
     page.locator('input[type="submit"]').click()
     page.locator(".app-shell").wait_for(state="visible")
     page.wait_for_function("() => typeof window.App?.navigate === 'function'")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_function(
+        """() => ["network", "bill", "complaints", "roaming"]
+          .every((name) => Boolean(window.WorkflowState?.get(name)))"""
+    )

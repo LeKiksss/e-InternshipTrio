@@ -196,12 +196,10 @@ def test_iphone_keyboard_keeps_shell_stable_and_positions_roaming_chat(
     page.evaluate(
         """() => {
           window.App.navigate('roaming');
-          document.querySelector('#roaming-intro').hidden = true;
-          document.querySelector('#roaming-planner').hidden = false;
-          document.querySelectorAll('[data-roaming-step]').forEach((panel) => {
-            const active = panel.dataset.roamingStep === '3';
-            panel.hidden = !active;
-            panel.classList.toggle('active', active);
+          window.WorkflowState.get('roaming').go('step3', {
+            push: false,
+            save: false,
+            replace: true,
           });
           document.querySelector('#app-scroll').scrollTop = 0;
         }"""
