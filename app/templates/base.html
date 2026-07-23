@@ -2,13 +2,20 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="csrf-token" content="{{ csrf_token_value }}">
   <meta name="theme-color" content="#e60000">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="e&amp; Care">
   <title>{% block title %}e&amp; Care{% endblock %}</title>
+  <link rel="manifest" href="{{ url_for('pwa.manifest') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/phone-frame.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   {% block styles %}{% endblock %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pwa.css') }}">
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <a class="skip-link" href="#main-content">Skip to content</a>
@@ -36,10 +43,39 @@
           {% endif %}
         {% endwith %}
         {% block content %}{% endblock %}
+        <aside class="pwa-install-prompt" data-ios-install-prompt hidden aria-label="Install e&amp; Care">
+          <button class="pwa-install-open" type="button" data-ios-install-open>
+            <span class="pwa-install-icon" aria-hidden="true">e&amp;</span>
+            <span><b>Add this app to your Home Screen</b><small>Open installation steps</small></span>
+          </button>
+          <button class="pwa-install-dismiss" type="button" data-ios-install-dismiss aria-label="Dismiss installation help">&times;</button>
+        </aside>
+        <div class="modal-backdrop pwa-install-backdrop" id="ios-install-sheet" hidden>
+          <section class="sheet compact pwa-install-sheet" role="dialog" aria-modal="true" aria-labelledby="ios-install-title">
+            <div class="sheet-handle"></div>
+            <button class="icon-button sheet-close" type="button" data-ios-install-close aria-label="Close">&times;</button>
+            <div class="pwa-sheet-icon" aria-hidden="true">e&amp;</div>
+            <span class="overline">INSTALL ON IPHONE</span>
+            <h2 id="ios-install-title">Add e&amp; Care to your Home Screen</h2>
+            <ol class="pwa-install-steps">
+              <li>Tap the Share button in Safari.</li>
+              <li>Select <b>Add to Home Screen</b>.</li>
+              <li>Enable <b>Open as Web App</b> if that option is shown.</li>
+              <li>Tap <b>Add</b>.</li>
+            </ol>
+            <button class="button button-secondary button-wide" type="button" data-ios-install-dismiss>Do not show again</button>
+          </section>
+        </div>
+        <aside class="pwa-update-toast" data-pwa-update hidden role="status" aria-live="polite">
+          <span><b>An update is available.</b><small>Refresh when you are ready.</small></span>
+          <button type="button" data-pwa-refresh>Refresh</button>
+          <button type="button" data-pwa-update-later aria-label="Dismiss update notice">Later</button>
+        </aside>
       </main>
       <div class="home-indicator" aria-hidden="true"></div>
     </div>
   </div>
   {% block scripts %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/pwa.js') }}"></script>
 </body>
 </html>

@@ -1,3 +1,4 @@
+import json
 from datetime import date, timedelta
 
 import pytest
@@ -46,6 +47,35 @@ def assert_no_horizontal_overflow(page):
         }"""
     )
     assert audit["scrollWidth"] <= audit["clientWidth"] + 1, audit
+
+
+def assert_minimum_visible_text_size(page, selector, minimum=10.5):
+    offenders = page.locator(selector).evaluate(
+        """(root, minimum) => [...root.querySelectorAll('*')].flatMap((node) => {
+          const style = getComputedStyle(node);
+          const rect = node.getBoundingClientRect();
+          if (
+            !rect.width || !rect.height || style.display === 'none' ||
+            style.visibility === 'hidden' || Number(style.opacity) === 0
+          ) return [];
+          const hasOwnText = [...node.childNodes].some(
+            (child) => child.nodeType === Node.TEXT_NODE && child.textContent.trim()
+          );
+          const isTextControl = ['INPUT', 'TEXTAREA', 'SELECT'].includes(node.tagName);
+          if (!hasOwnText && !isTextControl) return [];
+          const size = parseFloat(style.fontSize);
+          if (size + 0.01 >= minimum) return [];
+          return [{
+            tag: node.tagName,
+            id: node.id,
+            className: String(node.className),
+            text: (node.value || node.textContent || node.placeholder || '').trim().slice(0, 80),
+            fontSize: size,
+          }];
+        })""",
+        minimum,
+    )
+    assert not offenders, json.dumps(offenders, indent=2)
 
 
 def complete_network_test(page, location_choice):
@@ -212,6 +242,24 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#roaming-title")).to_have_text("Roaming Recommender")
     assert_clean_visible_copy(page)
     assert_no_horizontal_overflow(page)
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
+    hero = page.locator("#roaming-intro .travel-visual img")
+    expect(hero).to_be_visible()
+    hero.evaluate("(image) => image.decode()")
+    hero_geometry = hero.evaluate(
+        """(image) => ({
+          naturalWidth: image.naturalWidth,
+          naturalHeight: image.naturalHeight,
+          width: image.getBoundingClientRect().width,
+          height: image.getBoundingClientRect().height,
+          objectFit: getComputedStyle(image).objectFit,
+        })"""
+    )
+    assert (hero_geometry["naturalWidth"], hero_geometry["naturalHeight"]) == (1150, 560)
+    assert hero_geometry["objectFit"] == "contain"
+    assert abs(
+        hero_geometry["width"] / hero_geometry["height"] - 1150 / 560
+    ) < 0.01
 
     start = date.today() + timedelta(days=2)
     end_seven_days = start + timedelta(days=6)
@@ -219,6 +267,43 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     end_fourteen_days = start + timedelta(days=13)
 
     page.locator("#start-roaming").click()
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
+    destination_layout = page.evaluate(
+        """() => {
+          const outer = document.querySelector('#app-scroll');
+          const countries = document.querySelector('#country-list');
+          const submit = document.querySelector('#destination-next');
+          const nav = document.querySelector('.bottom-nav');
+          const outerBox = outer.getBoundingClientRect();
+          const submitBox = submit.getBoundingClientRect();
+          const navBox = nav.getBoundingClientRect();
+          countries.scrollTop = countries.scrollHeight;
+          return {
+            outerClientHeight: outer.clientHeight,
+            outerScrollHeight: outer.scrollHeight,
+            outerScrollTop: outer.scrollTop,
+            countryClientHeight: countries.clientHeight,
+            countryScrollHeight: countries.scrollHeight,
+            countryScrollTop: countries.scrollTop,
+            submitTop: submitBox.top,
+            submitBottom: submitBox.bottom,
+            visibleTop: outerBox.top,
+            visibleBottom: Math.min(outerBox.bottom, navBox.top),
+          };
+        }"""
+    )
+    assert destination_layout["outerScrollHeight"] <= (
+        destination_layout["outerClientHeight"] + 1
+    ), destination_layout
+    assert destination_layout["countryScrollHeight"] > (
+        destination_layout["countryClientHeight"] + 1
+    ), destination_layout
+    assert destination_layout["countryScrollTop"] > 0
+    assert destination_layout["outerScrollTop"] == 0
+    assert destination_layout["submitTop"] >= destination_layout["visibleTop"]
+    assert destination_layout["submitBottom"] <= (
+        destination_layout["visibleBottom"] + 1
+    )
     country_snapshot = page.locator("#country-list").evaluate(
         """(list) => ({
           letters: [...list.querySelectorAll('.country-letter')].map((item) => item.textContent.trim()),
@@ -249,12 +334,14 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#country-empty")).to_be_hidden()
     page.locator('[data-country="United Kingdom"]').click()
     page.locator("#destination-next").click()
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
     page.locator("#trip-start").fill(start.isoformat())
     page.locator("#trip-end").fill(end_seven_days.isoformat())
     expect(page.locator("#trip-days")).to_have_text("7")
     page.locator("#dates-next").click()
 
     expect(page.locator('[data-testid="current-usage-recommendation"]')).to_be_visible()
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
     expect(page.locator(".recommender-identity strong")).to_have_text("Roam Like Home")
     assert_clean_visible_copy(page)
     assert_no_horizontal_overflow(page)
@@ -287,6 +374,7 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     assert layout["textareaHeight"] >= 125
     page.locator("#usage-more-details").click()
     expect(page.locator("#usage-details-panel")).to_be_visible()
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
     expect(page.locator("#average-data")).to_have_text("1.3 GB")
     expect(page.locator("#average-local")).to_have_text("34 min")
     expect(page.locator("#average-international")).to_have_text("6 min")
@@ -326,17 +414,43 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#usage-segment-timeline .segment-card")).to_have_count(2)
     expect(page.locator("#usage-plan-items .plan-item")).not_to_have_count(0)
     expect(page.locator('[data-testid="current-usage-recommendation"]')).to_have_count(1)
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
 
     page.locator("#continue-roaming-plan").click()
     expect(page.locator('[data-testid="final-roaming-recommendation"]')).to_be_visible()
     assert_clean_visible_copy(page)
     assert_no_horizontal_overflow(page)
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
     expect(page.locator("#final-plan-items .plan-item")).not_to_have_count(0)
     expect(page.locator("#final-segment-timeline .segment-card")).to_have_count(2)
     expect(page.locator('[data-testid="final-roaming-recommendation"] .fit-explanation')).to_have_count(0)
     expect(page.locator("#package-why")).to_have_count(0)
     expect(page.locator('[data-testid="carrier-acknowledgement"]')).to_be_visible()
-    expect(page.locator("#carrier-note-network")).to_have_text("Automatic partner selection")
+    expect(page.locator("#carrier-note-network")).to_have_text(
+        "connected to a preferred partner network"
+    )
+    expect(page.locator("#package-network")).to_have_text(
+        "Connected to preferred partner"
+    )
+    assert "automatic partner" not in page.locator(
+        '[data-testid="carrier-acknowledgement"]'
+    ).inner_text().lower()
+    readable_text = page.locator(
+        ".package-card small, .package-detail, .carrier-note .overline, "
+        ".carrier-note > p, .carrier-acknowledgement, .activation-card .overline, "
+        ".activation-lock-message, .family-pill, .plan-item p, .plan-item small, "
+        ".plan-allowances span, .activation-step strong, .activation-step small, "
+        ".activation-step code"
+    ).evaluate_all(
+        "(nodes) => nodes.filter((node) => node.offsetParent !== null).map((node) => parseFloat(getComputedStyle(node).fontSize))"
+    )
+    assert readable_text
+    assert min(readable_text) >= 10.5
+    assert float(
+        page.locator(".activation-step code").first.evaluate(
+            "(node) => parseFloat(getComputedStyle(node).fontSize)"
+        )
+    ) >= 13
     expect(page.locator("#copy-code")).to_be_disabled()
     expect(page.locator("#open-dialer")).to_be_disabled()
     expect(page.locator("#roaming-done")).to_be_disabled()
@@ -356,6 +470,7 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     page.locator("#roaming-done").click()
     expect(page.locator("#saved-recommendations-section")).to_be_visible()
     expect(page.locator(".saved-roaming-card")).to_have_count(1)
+    assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
 
     page.reload()
     expect(page.locator("#saved-recommendations-section")).to_be_visible()

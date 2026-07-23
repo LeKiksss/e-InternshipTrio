@@ -11,12 +11,25 @@ from flask import current_app
 from app.models import RoamingPackage, UserMonthlyUsage
 
 from .gemini_recommender import (
+    GeminiConversationUnavailable,
     GeminiRateLimited,
     GeminiUnavailable,
     request_recommendation_decision,
 )
 from .package_fallback_optimizer import optimize_package_plan
 from .recommendation_validator import validate_recommendation_decision
+from .recommendation_values import (
+    METRIC_NAMES,
+    canonical_decimal,
+    canonical_metric_floats,
+    canonical_string,
+)
+from .smart_history import (
+    build_history_key,
+    find_valid_history_plan,
+    is_history_eligible,
+    upsert_validated_gemini_plan,
+)
 from .usage_analysis import METRICS, build_trip_usage_analysis, calculate_trip_days
 from .user_requirement_parser import merge_requirement_state, parse_user_requirements
 
@@ -76,7 +89,6 @@ def _compact_catalogue(packages):
     return [
         {
             "package_code": package.package_code,
-            "family": package.family,
             "validity_days": package.validity_days,
             "price_aed": float(package.price_aed),
             "data_gb": float(package.data_gb),
@@ -97,6 +109,7 @@ def _compact_current_plan(recommendation):
                 "quantity": item.get("quantity"),
                 "coverage_start_day": item.get("coverage_start_day"),
                 "coverage_end_day": item.get("coverage_end_day"),
+                "activation_order": item.get("activation_order"),
                 "assigned_segment_id": item.get("assigned_segment_id"),
             }
             for item in selection.get("items", [])
@@ -116,6 +129,32 @@ def _compact_current_plan(recommendation):
     }
 
 
+def _compact_baseline_plan(plan):
+    return {
+        "trip_segments": [
+            {
+                "segment_id": segment.get("segment_id"),
+                "start_day": segment.get("start_day"),
+                "end_day": segment.get("end_day"),
+                "usage_interpretation": segment.get("usage_interpretation"),
+            }
+            for segment in plan.get("segments", [])
+        ],
+        "package_items": [
+            {
+                "package_code": item.get("package_code"),
+                "quantity": item.get("quantity"),
+                "coverage_start_day": item.get("coverage_start_day"),
+                "coverage_end_day": item.get("coverage_end_day"),
+                "activation_order": item.get("activation_order"),
+                "assigned_segment_id": item.get("assigned_segment_id"),
+            }
+            for item in plan["selection"]["items"]
+        ],
+        "total_price_aed": plan["selection"].get("total_price_aed"),
+    }
+
+
 def _compact_constraints(parsed_requirements):
     return {
         "minimums": parsed_requirements.get("minimums", {}),
@@ -132,25 +171,100 @@ def _compact_constraints(parsed_requirements):
     }
 
 
+def _complete_requirements_state(requirements, trip_days, segments):
+    split_details = None
+    if segments:
+        split_details = [
+            {
+                "start_day": int(segment["start_day"]),
+                "end_day": int(segment["end_day"]),
+                **{
+                    metric: canonical_string(
+                        segment.get("requirements", {}).get(metric, 0),
+                        field=metric,
+                    )
+                    for metric in METRIC_NAMES
+                },
+            }
+            for segment in sorted(
+                segments,
+                key=lambda item: (item["start_day"], item["end_day"]),
+            )
+        ]
+    return {
+        **{
+            metric: canonical_string(requirements.get(metric, 0), field=metric)
+            for metric in METRIC_NAMES
+        },
+        "period_days": int(trip_days),
+        "split": bool(split_details),
+        "split_details": split_details,
+    }
+
+
+def _parsed_from_interpreter(
+    latest_message,
+    interpreted_state,
+    current_recommendation,
+):
+    minimums = canonical_metric_floats(interpreted_state["requirements"])
+    segments = deepcopy(interpreted_state.get("segments") or [])
+    changed = list(interpreted_state.get("changed_metrics") or [])
+    parsed = {
+        "latest_message": latest_message,
+        "minimums": minimums,
+        "exact_targets": {},
+        "maximum_price_aed": None,
+        "minimum_validity_days": None,
+        "comparative": [],
+        "segments": segments,
+        "restore_original": False,
+        "reset_constraints": False,
+        "interpretation": "Exact requirements interpreted from the latest request.",
+        "affected_metrics": changed,
+        "trip_wide_metrics": [] if segments else list(METRIC_NAMES),
+        "maximum_price_mentioned": False,
+        "minimum_validity_mentioned": False,
+        "segments_mentioned": bool(segments),
+        "whole_trip_mentioned": not bool(segments),
+        "preservation_minimums": {},
+        "active": True,
+        "interpreter_validated": True,
+    }
+    if not segments:
+        parsed["preservation_minimums"] = (
+            _refinement_preservation_minimums(
+                current_recommendation,
+                parsed,
+            )
+        )
+    return parsed
+
+
 def _segment_requirements(segment_descriptors, monthly_estimate):
     segments = []
     for descriptor in segment_descriptors:
         segment_days = descriptor["end_day"] - descriptor["start_day"] + 1
         modifiers = descriptor.get("modifiers", {})
-        requirements = {
+        requirements = canonical_metric_floats({
             "data_gb": monthly_estimate["data_gb"] * segment_days / 30 * modifiers.get("data_factor", 1.0),
             "local_minutes": monthly_estimate["local_minutes"] * segment_days / 30 * modifiers.get("local_factor", 1.0),
             "international_minutes": monthly_estimate["international_minutes"] * segment_days / 30 * modifiers.get("international_factor", 1.0),
             "sms": monthly_estimate["sms"] * segment_days / 30 * modifiers.get("sms_factor", 1.0),
-        }
+        })
+        explicit_requirements = descriptor.get("explicit_requirements", {})
+        for metric, value in explicit_requirements.items():
+            if metric in METRIC_NAMES:
+                requirements[metric] = float(canonical_decimal(value, field=metric))
         segments.append(
             {
                 "segment_id": descriptor["segment_id"],
                 "start_day": descriptor["start_day"],
                 "end_day": descriptor["end_day"],
                 "usage_interpretation": descriptor["usage_interpretation"],
-                "requirements": _rounded_usage(requirements),
+                "requirements": requirements,
                 "exact_targets": {},
+                "explicit_metrics": sorted(explicit_requirements),
             }
         )
     return segments
@@ -162,25 +276,51 @@ def _apply_explicit_segment_targets(segments, minimums):
     for metric in METRICS:
         if metric not in minimums or not segments:
             continue
-        target = float(minimums[metric])
-        existing = sum(float(segment["requirements"].get(metric, 0)) for segment in segments)
+        target = canonical_decimal(minimums[metric], field=metric)
+        explicit_segments = [
+            segment for segment in segments if metric in segment.get("explicit_metrics", [])
+        ]
+        adjustable_segments = [
+            segment for segment in segments if metric not in segment.get("explicit_metrics", [])
+        ]
+        explicit_total = sum(
+            (
+                canonical_decimal(segment["requirements"].get(metric, 0), field=metric)
+                for segment in explicit_segments
+            ),
+            canonical_decimal(0, field=metric),
+        )
+        target = max(target, explicit_total)
         if target == 0:
-            for segment in segments:
+            for segment in adjustable_segments:
                 segment["requirements"][metric] = 0.0
                 segment["exact_targets"][metric] = 0.0
             continue
-        if existing > 0:
-            shares = [float(segment["requirements"].get(metric, 0)) / existing for segment in segments]
-        else:
-            total_days = sum(segment["end_day"] - segment["start_day"] + 1 for segment in segments)
-            shares = [
-                (segment["end_day"] - segment["start_day"] + 1) / total_days
-                for segment in segments
-            ]
-        allocated = 0.0
-        for index, (segment, share) in enumerate(zip(segments, shares)):
-            value = target - allocated if index == len(segments) - 1 else target * share
-            segment["requirements"][metric] = round(value, 3)
+        if not adjustable_segments:
+            continue
+        remaining_target = target - explicit_total
+        total_days = sum(
+            segment["end_day"] - segment["start_day"] + 1
+            for segment in adjustable_segments
+        )
+        shares = [
+            canonical_decimal(
+                segment["end_day"] - segment["start_day"] + 1,
+                field=metric,
+            )
+            / total_days
+            for segment in adjustable_segments
+        ]
+        allocated = canonical_decimal(0, field=metric)
+        for index, (segment, share) in enumerate(zip(adjustable_segments, shares)):
+            value = (
+                remaining_target - allocated
+                if index == len(adjustable_segments) - 1
+                else canonical_decimal(remaining_target * share, field=metric)
+            )
+            segment["requirements"][metric] = float(
+                canonical_decimal(value, field=metric)
+            )
             allocated += value
 
 
@@ -191,27 +331,51 @@ def _decision_context(
     packages,
     parsed_requirements,
     current_recommendation,
-    conversation,
+    baseline_plan,
+    *,
+    include_catalogue,
+    interpreted_state=None,
 ):
     context = {
         "destination": destination,
         "trip_days": trip_days,
-        "trip_requirements": _rounded_requirements(requirements),
+        "trip_requirements": {
+            metric: canonical_string(requirements.get(metric, 0), field=metric)
+            for metric in METRIC_NAMES
+        },
         "requirement_scope": {
             "default": "entire_trip",
             "trip_wide_metrics": parsed_requirements.get("trip_wide_metrics", []),
         },
-        "active_package_catalogue": _compact_catalogue(packages),
+        "validated_baseline_plan": _compact_baseline_plan(baseline_plan),
     }
+    if include_catalogue:
+        context["active_package_catalogue"] = _compact_catalogue(packages)
     if parsed_requirements.get("latest_message"):
-        context.update(
-            {
-                "latest_user_instruction": parsed_requirements["latest_message"],
-                "active_constraints": _compact_constraints(parsed_requirements),
-                "current_plan": _compact_current_plan(current_recommendation),
-                "recent_conversation": (conversation or [])[-4:],
-            }
+        context["active_constraints"] = _compact_constraints(
+            parsed_requirements
         )
+        context["current_plan"] = _compact_current_plan(
+            current_recommendation
+        )
+        if interpreted_state is not None:
+            context["request_type"] = "interpreted_refinement"
+            context["changed_metrics"] = list(
+                interpreted_state.get("changed_metrics") or []
+            )
+            context["preserved_metrics"] = list(
+                interpreted_state.get("preserved_metrics") or []
+            )
+            context["exact_split_requirements"] = interpreted_state.get(
+                "split_details"
+            )
+        else:
+            # Retained only for direct legacy service calls. The application
+            # route uses the separate interpreter and never sends raw chat to
+            # the package planner.
+            context["latest_user_instruction"] = parsed_requirements[
+                "latest_message"
+            ]
     return context
 
 
@@ -298,6 +462,11 @@ def build_recommendation(
     current_recommendation=None,
     conversation=None,
     gemini_client=None,
+    previous_interaction_id=None,
+    interaction_state=None,
+    interpreted_state=None,
+    force_python_fallback=False,
+    upstream_gemini_rate_limited=False,
     today=None,
 ):
     trip_days = calculate_trip_days(start_date, end_date, today=today or date.today())
@@ -310,115 +479,92 @@ def build_recommendation(
         raise ValueError("This account needs six months of usage history before a recommendation can be calculated.")
 
     usage_analysis = build_trip_usage_analysis(usage_rows, trip_days)
-    requirements = dict(usage_analysis["trip_estimate"])
-    latest_parsed = parse_user_requirements(
-        latest_message or "",
-        current_recommendation=current_recommendation,
-        trip_days=trip_days,
-    )
-    previous_requirements = (current_recommendation or {}).get("_active_requirements", {})
-    parsed = merge_requirement_state(previous_requirements, latest_parsed)
-    if latest_parsed["restore_original"]:
-        current_recommendation = None
-        conversation = []
-    parsed["preservation_minimums"] = _refinement_preservation_minimums(
-        current_recommendation,
-        latest_parsed,
-    )
-    effective_minimums = dict(parsed["minimums"])
-    for metric, value in parsed["preservation_minimums"].items():
-        effective_minimums[metric] = max(
-            float(effective_minimums.get(metric, 0)),
-            float(value),
-        )
-    for metric, value in effective_minimums.items():
-        requirements[metric] = float(value)
-
-    segment_descriptors = deepcopy(parsed.get("segments", []))
-    segments = _segment_requirements(
-        segment_descriptors,
-        usage_analysis["weighted_monthly_estimate"],
-    )
-    _apply_explicit_segment_targets(segments, effective_minimums)
-    if segments:
-        for metric in METRICS:
-            requirements[metric] = sum(
-                float(segment["requirements"].get(metric, 0)) for segment in segments
+    if interpreted_state is not None:
+        if int(interpreted_state.get("period_days", 0)) != trip_days:
+            raise ValueError(
+                "The interpreted requirements do not match the active trip."
             )
-    parsed["segments"] = segments
-    packages = RoamingPackage.query.filter_by(active=True).order_by(RoamingPackage.package_code).all()
-    if not packages:
-        raise ValueError("The package catalogue is temporarily unavailable.")
-
-    context = _decision_context(
-        destination,
-        trip_days,
-        requirements,
-        packages,
-        parsed,
-        current_recommendation,
-        conversation,
-    )
-
-    plan = None
-    gemini_rate_limited = False
-    api_key = current_app.config.get("GEMINI_API_KEY", "")
-    model = current_app.config.get("GEMINI_MODEL", "gemini-3.5-flash")
-    timeout = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 45)
-    rate_limit_cooldown = current_app.config.get(
-        "GEMINI_RATE_LIMIT_COOLDOWN_SECONDS",
-        60,
-    )
-    request_log_dir = current_app.config.get("GEMINI_REQUEST_LOG_DIR")
-    try:
-        decision = request_recommendation_decision(
-            context,
-            api_key=api_key,
-            model=model,
-            timeout_seconds=timeout,
-            client=gemini_client,
-            request_log_dir=request_log_dir,
-            rate_limit_cooldown_seconds=rate_limit_cooldown,
+        requirements = canonical_metric_floats(
+            interpreted_state["requirements"]
         )
-        plan, errors = validate_recommendation_decision(
-            decision,
-            packages,
-            trip_days,
+        parsed = _parsed_from_interpreter(
+            latest_message or "",
+            interpreted_state,
+            current_recommendation,
+        )
+        for metric, value in parsed["preservation_minimums"].items():
+            requirements[metric] = max(
+                float(requirements.get(metric, 0)),
+                float(value),
+            )
+        segments = deepcopy(interpreted_state.get("segments") or [])
+        segment_descriptors = deepcopy(segments)
+    else:
+        requirements = dict(usage_analysis["trip_estimate"])
+        latest_parsed = parse_user_requirements(
+            latest_message or "",
+            current_recommendation=current_recommendation,
+            trip_days=trip_days,
+        )
+        previous_requirements = (current_recommendation or {}).get(
+            "_active_requirements", {}
+        )
+        parsed = merge_requirement_state(previous_requirements, latest_parsed)
+        if latest_parsed["restore_original"]:
+            current_recommendation = None
+            conversation = []
+        parsed["preservation_minimums"] = _refinement_preservation_minimums(
+            current_recommendation,
+            latest_parsed,
+        )
+        effective_minimums = dict(parsed["minimums"])
+        for metric, value in parsed["preservation_minimums"].items():
+            effective_minimums[metric] = max(
+                float(effective_minimums.get(metric, 0)),
+                float(value),
+            )
+        for metric, value in effective_minimums.items():
+            requirements[metric] = float(value)
+
+        segment_descriptors = deepcopy(parsed.get("segments", []))
+        segments = _segment_requirements(
+            segment_descriptors,
+            usage_analysis["weighted_monthly_estimate"],
+        )
+        _apply_explicit_segment_targets(segments, effective_minimums)
+        if segments:
+            for metric in METRICS:
+                requirements[metric] = sum(
+                    float(segment["requirements"].get(metric, 0))
+                    for segment in segments
+                )
+    requirements = canonical_metric_floats(requirements)
+    parsed["segments"] = segments
+    initial_request = not parsed.get("latest_message") and current_recommendation is None
+    history_key = build_history_key(requirements, trip_days, segments)
+    history_eligible = (
+        True
+        if interpreted_state is not None
+        else is_history_eligible(parsed, initial=initial_request)
+    )
+    plan = (
+        find_valid_history_plan(
+            history_key,
             requirements,
             parsed_requirements=parsed,
             current_recommendation=current_recommendation,
         )
-        if errors:
-            LOGGER.info("Correction retry started")
-            corrected = request_recommendation_decision(
-                context,
-                api_key=api_key,
-                model=model,
-                timeout_seconds=timeout,
-                client=gemini_client,
-                invalid_decision=(
-                    decision.model_dump()
-                    if hasattr(decision, "model_dump")
-                    else dict(decision)
-                ),
-                validation_errors=errors,
-                request_log_dir=request_log_dir,
-                rate_limit_cooldown_seconds=rate_limit_cooldown,
-            )
-            plan, errors = validate_recommendation_decision(
-                corrected,
-                packages,
-                trip_days,
-                requirements,
-                parsed_requirements=parsed,
-                current_recommendation=current_recommendation,
-            )
-            if errors:
-                raise GeminiUnavailable("Gemini did not return a valid corrected plan.")
-    except GeminiUnavailable as error:
-        gemini_rate_limited = isinstance(error, GeminiRateLimited)
-        LOGGER.info("Deterministic fallback used")
-        plan = optimize_package_plan(
+        if history_eligible
+        else None
+    )
+    smart_history_hit = plan is not None
+    gemini_rate_limited = bool(upstream_gemini_rate_limited)
+    if plan is None:
+        packages = RoamingPackage.query.filter_by(active=True).order_by(RoamingPackage.package_code).all()
+        if not packages:
+            raise ValueError("The package catalogue is temporarily unavailable.")
+
+        fallback_plan = optimize_package_plan(
             packages,
             trip_days,
             requirements,
@@ -434,14 +580,108 @@ def build_recommendation(
                 if metric in requirements
             } if not segments else None,
         )
-        plan["latest_request_interpretation"] = (
-            parsed["interpretation"] if parsed["latest_message"] else None
-        )
-        plan["modification_summary"] = (
-            "The available package options were reviewed against the latest instruction."
-            if parsed["latest_message"]
-            else None
-        )
+        if force_python_fallback:
+            LOGGER.info("Deterministic fallback used")
+            plan = fallback_plan
+            plan["latest_request_interpretation"] = (
+                parsed["interpretation"] if parsed["latest_message"] else None
+            )
+            plan["modification_summary"] = (
+                "The available package options were reviewed against the latest instruction."
+                if parsed["latest_message"]
+                else None
+            )
+        else:
+            context = _decision_context(
+                destination,
+                trip_days,
+                requirements,
+                packages,
+                parsed,
+                current_recommendation,
+                fallback_plan,
+                include_catalogue=not bool(previous_interaction_id),
+                interpreted_state=interpreted_state,
+            )
+            api_key = current_app.config.get("GEMINI_API_KEY", "")
+            model = current_app.config.get(
+                "GEMINI_PLANNER_MODEL",
+                "gemini-3.6-flash",
+            )
+            timeout = current_app.config.get("GEMINI_TIMEOUT_SECONDS", 30)
+            rate_limit_cooldown = current_app.config.get(
+                "GEMINI_RATE_LIMIT_COOLDOWN_SECONDS",
+                60,
+            )
+            request_log_dir = current_app.config.get(
+                "GEMINI_REQUEST_LOG_DIR"
+            )
+            try:
+                decision = request_recommendation_decision(
+                    context,
+                    api_key=api_key,
+                    model=model,
+                    previous_interaction_id=previous_interaction_id,
+                    request_kind=(
+                        "refinement"
+                        if current_recommendation is not None
+                        else "initial"
+                    ),
+                    timeout_seconds=timeout,
+                    client=gemini_client,
+                    request_log_dir=request_log_dir,
+                    rate_limit_cooldown_seconds=rate_limit_cooldown,
+                )
+                next_interaction_id = getattr(
+                    decision,
+                    "_interaction_id",
+                    None,
+                )
+                plan, errors = validate_recommendation_decision(
+                    decision,
+                    packages,
+                    trip_days,
+                    requirements,
+                    parsed_requirements=parsed,
+                    current_recommendation=current_recommendation,
+                )
+                if errors:
+                    LOGGER.info(
+                        "Gemini plan invalid; using deterministic fallback "
+                        "without a retry"
+                    )
+                    raise GeminiUnavailable(
+                        "Gemini did not return a valid plan."
+                    )
+                if next_interaction_id and interaction_state is not None:
+                    interaction_state["interaction_id"] = (
+                        next_interaction_id
+                    )
+                if history_eligible:
+                    upsert_validated_gemini_plan(history_key, plan)
+            except GeminiUnavailable as error:
+                if (
+                    isinstance(error, GeminiConversationUnavailable)
+                    and interaction_state is not None
+                ):
+                    interaction_state["reset_conversation"] = True
+                gemini_rate_limited = isinstance(
+                    error,
+                    GeminiRateLimited,
+                )
+                LOGGER.info("Deterministic fallback used")
+                plan = fallback_plan
+                plan["latest_request_interpretation"] = (
+                    parsed["interpretation"]
+                    if parsed["latest_message"]
+                    else None
+                )
+                plan["modification_summary"] = (
+                    "The available package options were reviewed against "
+                    "the latest instruction."
+                    if parsed["latest_message"]
+                    else None
+                )
 
     response = {
         "recommendation_id": _recommendation_id(
@@ -473,11 +713,24 @@ def build_recommendation(
         "modification_summary": plan.get("modification_summary"),
         "tradeoff_summary": plan.get("tradeoff_summary"),
         "source": plan.get("source", "gemini"),
+        "recommendation_source": (
+            "smart_history"
+            if smart_history_hit
+            else "fallback"
+            if plan.get("source") == "deterministic_fallback"
+            else "gemini"
+        ),
+        "smart_history_hit": smart_history_hit,
         "gemini_rate_limited": gemini_rate_limited,
         "_active_requirements": {
             **deepcopy(parsed),
             "segments": segment_descriptors,
         },
+        "_requirements_state": _complete_requirements_state(
+            requirements,
+            trip_days,
+            segments,
+        ),
     }
     if parsed.get("latest_message"):
         response["chat_message"] = _refinement_chat_message(

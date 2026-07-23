@@ -14,6 +14,11 @@ def _current_totals(current_recommendation):
     return (current_recommendation or {}).get("selection", {})
 
 
+def _strictly_more(value, metric):
+    increment = 0.001 if metric == "data_gb" else 1
+    return float(value) + increment
+
+
 def _active_minimums(current_recommendation):
     return (
         (current_recommendation or {})
@@ -31,6 +36,24 @@ def _mentions_whole_trip(text):
             flags=re.IGNORECASE,
         )
     )
+
+
+def _numeric_segment_requirements(text):
+    """Extract only service quantities from one time-bounded clause."""
+
+    patterns = {
+        "data_gb": r"(\d+(?:\.\d+)?)\s*gb\b",
+        "local_minutes": r"(\d+(?:\.\d+)?)\s+local(?:\s+call)?\s+minutes?\b",
+        "international_minutes": (
+            r"(\d+(?:\.\d+)?)\s+international(?:\s+call)?\s+minutes?\b"
+        ),
+        "sms": r"(\d+(?:\.\d+)?)\s*(?:sms|texts?)\b",
+    }
+    return {
+        metric: value
+        for metric, pattern in patterns.items()
+        if (value := _number(pattern, text)) is not None
+    }
 
 
 def parse_user_requirements(message, current_recommendation=None, trip_days=None):
@@ -153,7 +176,8 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
         affected_metrics.add("data_gb")
         if totals.get("total_data_gb") is not None:
             minimums["data_gb"] = max(
-                minimums.get("data_gb", 0), float(totals["total_data_gb"]) * 1.25
+                minimums.get("data_gb", 0),
+                _strictly_more(totals["total_data_gb"], "data_gb"),
             )
     if re.search(r"\b(less|lower|reduce|fewer) data\b", lowered):
         comparative.append("less_data")
@@ -164,7 +188,21 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
         if totals.get("total_international_minutes") is not None:
             minimums["international_minutes"] = max(
                 minimums.get("international_minutes", 0),
-                float(totals["total_international_minutes"]) * 1.25,
+                _strictly_more(
+                    totals["total_international_minutes"],
+                    "international_minutes",
+                ),
+            )
+    if re.search(r"\bmore local (?:calls?|minutes?)\b", lowered):
+        comparative.append("more_local")
+        affected_metrics.add("local_minutes")
+        if totals.get("total_local_minutes") is not None:
+            minimums["local_minutes"] = max(
+                minimums.get("local_minutes", 0),
+                _strictly_more(
+                    totals["total_local_minutes"],
+                    "local_minutes",
+                ),
             )
     if re.search(r"\bmore (?:calls?|call minutes?|voice)\b", lowered):
         comparative.append("more_calls")
@@ -172,12 +210,18 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
         if totals.get("total_local_minutes") is not None:
             minimums["local_minutes"] = max(
                 minimums.get("local_minutes", 0),
-                float(totals["total_local_minutes"]) * 1.25,
+                _strictly_more(
+                    totals["total_local_minutes"],
+                    "local_minutes",
+                ),
             )
         if totals.get("total_international_minutes") is not None:
             minimums["international_minutes"] = max(
                 minimums.get("international_minutes", 0),
-                float(totals["total_international_minutes"]) * 1.25,
+                _strictly_more(
+                    totals["total_international_minutes"],
+                    "international_minutes",
+                ),
             )
     if re.search(r"\b(fewer|less|lower|reduce) (?:calls?|call minutes?|voice)\b", lowered):
         comparative.append("fewer_calls")
@@ -240,6 +284,15 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
     segments = parse_temporal_segments(text, trip_days) if trip_days else []
     if whole_trip_mentioned:
         segments = []
+    segment_explicit_metrics = {
+        metric
+        for segment in segments
+        for metric in segment.get("explicit_requirements", {})
+    }
+    for metric in segment_explicit_metrics:
+        # A value tied to one named period is not a whole-trip minimum.
+        minimums.pop(metric, None)
+        exact_targets.pop(metric, None)
     trip_wide_metrics = sorted(
         metric for metric in affected_metrics if metric in minimums and not segments
     )
@@ -330,18 +383,77 @@ def parse_temporal_segments(message, trip_days):
     lowered = message.lower()
     descriptors = []
 
-    def add(start, end, interpretation, **modifiers):
+    def add(start, end, interpretation, explicit_requirements=None, **modifiers):
         start = max(1, start)
         end = min(trip_days, end)
         if start <= end:
-            descriptors.append(
-                {
-                    "start_day": start,
-                    "end_day": end,
-                    "usage_interpretation": interpretation,
-                    "modifiers": modifiers,
-                }
-            )
+            descriptor = {
+                "start_day": start,
+                "end_day": end,
+                "usage_interpretation": interpretation,
+                "modifiers": modifiers,
+            }
+            if explicit_requirements:
+                descriptor["explicit_requirements"] = explicit_requirements
+            descriptors.append(descriptor)
+
+    number_words = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+        "fourteen": 14,
+    }
+    explicit_period_pattern = re.compile(
+        r"\b(?:(first|final|last)\s+"
+        r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|fourteen)\s+days?"
+        r"|days?\s+(\d+)\s*(?:-|â€“|â€”|to|through)\s*(\d+))\b",
+        flags=re.IGNORECASE,
+    )
+    explicit_matches = list(explicit_period_pattern.finditer(lowered))
+    for index, match in enumerate(explicit_matches):
+        clause_end = (
+            explicit_matches[index + 1].start()
+            if index + 1 < len(explicit_matches)
+            else len(lowered)
+        )
+        clause = lowered[match.start() : clause_end]
+        explicit_requirements = _numeric_segment_requirements(clause)
+        if not explicit_requirements:
+            continue
+        if match.group(3) is not None:
+            start_day = int(match.group(3))
+            end_day = int(match.group(4))
+        else:
+            length_text = match.group(2)
+            length = int(length_text) if length_text.isdigit() else number_words[length_text]
+            if match.group(1) == "first":
+                start_day, end_day = 1, length
+            else:
+                start_day, end_day = trip_days - length + 1, trip_days
+        if start_day < 1 or end_day > trip_days or start_day > end_day:
+            raise ValueError("Split periods must stay within the trip dates.")
+        add(
+            start_day,
+            end_day,
+            "Explicit numeric requirements for this trip period",
+            explicit_requirements=explicit_requirements,
+            data_factor=1.0,
+            local_factor=1.0,
+            international_factor=1.0,
+            sms_factor=1.0,
+        )
+
+    if descriptors:
+        explicit_ranges = True
+    else:
+        explicit_ranges = False
 
     first_week = "first week" in lowered or "first seven days" in lowered
     second_week = "second week" in lowered or "next week" in lowered
@@ -351,7 +463,7 @@ def parse_temporal_segments(message, trip_days):
     calls_only_final = final_three and "only need calls" in lowered
     calls_only_first_half = first_half and "only need calls" in lowered
 
-    if calls_only_final and trip_days > 3:
+    if not explicit_ranges and calls_only_final and trip_days > 3:
         add(
             1,
             trip_days - 3,
@@ -362,7 +474,7 @@ def parse_temporal_segments(message, trip_days):
             sms_factor=1.0,
         )
 
-    if first_week:
+    if not explicit_ranges and first_week:
         first_text = lowered.split("second week")[0].split("next week")[0]
         wifi = "wi-fi" in first_text or "wifi" in first_text
         light = wifi or "light" in first_text or "not need much data" in first_text
@@ -376,7 +488,7 @@ def parse_temporal_segments(message, trip_days):
             international_factor=0.0 if no_calls else 1.0,
             sms_factor=1.0,
         )
-    if second_week:
+    if not explicit_ranges and second_week:
         heavy = any(term in lowered for term in ("heavy data", "much more data", "stream"))
         add(
             8,
@@ -387,7 +499,7 @@ def parse_temporal_segments(message, trip_days):
             international_factor=1.0,
             sms_factor=1.0,
         )
-    if final_three:
+    if not explicit_ranges and final_three:
         only_calls = calls_only_final or "for business calls" in lowered
         add(
             trip_days - 2,
@@ -398,7 +510,7 @@ def parse_temporal_segments(message, trip_days):
             international_factor=1.5 if only_calls else 1.0,
             sms_factor=1.0,
         )
-    if first_half and not first_week:
+    if not explicit_ranges and first_half and not first_week:
         midpoint = math.ceil(trip_days / 2)
         add(
             1,
@@ -419,7 +531,7 @@ def parse_temporal_segments(message, trip_days):
                 international_factor=0.0,
                 sms_factor=1.0,
             )
-    if second_half and not second_week:
+    if not explicit_ranges and second_half and not second_week:
         midpoint = math.ceil(trip_days / 2)
         add(
             midpoint + 1,
@@ -454,6 +566,8 @@ def parse_temporal_segments(message, trip_days):
                 }
             )
         if descriptor["start_day"] < cursor:
+            if explicit_ranges:
+                raise ValueError("Split periods cannot overlap.")
             descriptor = {**descriptor, "start_day": cursor}
         if descriptor["start_day"] <= descriptor["end_day"]:
             completed.append(descriptor)

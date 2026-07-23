@@ -22,7 +22,14 @@ def login():
             login_user(user, remember=form.remember.data)
             flash("Welcome back.", "success")
             next_url = request.args.get("next")
-            return redirect(next_url if next_url and next_url.startswith("/") else url_for("main.app_shell"))
+            safe_next_url = (
+                next_url
+                if next_url
+                and next_url.startswith("/")
+                and not next_url.startswith("//")
+                else url_for("main.app_shell")
+            )
+            return redirect(safe_next_url)
         form.password.errors.append("The email, phone, or password is incorrect.")
     return render_template("auth/login.html", form=form)
 

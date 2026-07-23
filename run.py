@@ -1,6 +1,7 @@
 import os
 
 from app import create_app
+from waitress import serve
 
 
 app = create_app()
@@ -18,8 +19,7 @@ def _port():
 
 
 if __name__ == "__main__":
-    app.run(
-        host=os.getenv("APP_HOST", os.getenv("HOST", "127.0.0.1")),
-        port=_port(),
-        debug=False,
-    )
+    host = os.getenv("APP_HOST", os.getenv("HOST", "127.0.0.1"))
+    port = _port()
+    print(f"Serving with Waitress on http://{host}:{port}")
+    serve(app, host=host, port=port)

@@ -104,6 +104,14 @@ def validate_recommendation_decision(
             }
         )
 
+    if len(factual_items) > 1:
+        for item in factual_items:
+            package = package_map[item["package_code"]]
+            if not package.stackable:
+                errors.append(
+                    f'Package {item["package_code"]} cannot be combined with other packages.'
+                )
+
     sorted_items = sorted(factual_items, key=lambda item: (item["coverage_start_day"], item["activation_order"]))
     expected_day = 1
     activation_numbers = []
@@ -336,7 +344,7 @@ def validate_recommendation_decision(
         "segments": segments,
         "selection": selection,
         "reason": _clean_text(
-            payload.get("reason"),
+            payload.get("reason") or payload.get("modification_summary"),
             "This package sequence meets the trip duration and validated usage requirements.",
         ),
         "why_it_fits": [

@@ -38,6 +38,7 @@ def test_sqlite_upgrade_is_additive_idempotent_and_preserves_rows(tmp_path):
             column["name"] for column in inspect(db.engine).get_columns("roaming_package")
         }
         assert set(ROAMING_PACKAGE_COLUMNS).issubset(columns)
+        assert "smart_recommendation_history" in inspect(db.engine).get_table_names()
         with db.engine.connect() as connection:
             preserved = connection.execute(
                 text("SELECT id, name FROM roaming_package")

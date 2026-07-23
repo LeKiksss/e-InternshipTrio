@@ -85,16 +85,22 @@ def test_price_validity_and_comparatives_are_parsed_against_current_plan():
     validity = parse_user_requirements("I need at least 21 days of validity", CURRENT, 14)
     more_data = parse_user_requirements("Give me more data", CURRENT, 14)
     more_calls = parse_user_requirements("I need more calls", CURRENT, 14)
+    more_local = parse_user_requirements(
+        "I need more local minutes",
+        CURRENT,
+        14,
+    )
     more_international = parse_user_requirements(
         "Give me more international minutes", CURRENT, 14
     )
 
     assert price["maximum_price_aed"] == 200
     assert validity["minimum_validity_days"] == 21
-    assert more_data["minimums"]["data_gb"] == pytest.approx(10)
-    assert more_calls["minimums"]["local_minutes"] == pytest.approx(250)
-    assert more_calls["minimums"]["international_minutes"] == pytest.approx(125)
-    assert more_international["minimums"]["international_minutes"] == pytest.approx(125)
+    assert more_data["minimums"]["data_gb"] == pytest.approx(8.001)
+    assert more_calls["minimums"]["local_minutes"] == pytest.approx(201)
+    assert more_calls["minimums"]["international_minutes"] == pytest.approx(101)
+    assert more_local["minimums"]["local_minutes"] == pytest.approx(201)
+    assert more_international["minimums"]["international_minutes"] == pytest.approx(101)
 
     for message, preference in (
         ("Give me less data", "less_data"),
@@ -171,6 +177,38 @@ def test_temporal_segments_cover_every_day_once():
     assert heavy[1]["modifiers"]["data_factor"] == 3.5
     assert final_calls[0]["modifiers"]["local_factor"] == 0
     assert final_calls[-1]["modifiers"]["local_factor"] == 1.5
+
+
+def test_explicit_split_values_are_attached_to_their_exact_periods():
+    parsed = parse_user_requirements(
+        "For the first seven days I need 10 GB, and for the final three days I need 2 GB.",
+        CURRENT,
+        10,
+    )
+    assert parsed["minimums"] == {}
+    assert [segment["explicit_requirements"]["data_gb"] for segment in parsed["segments"]] == [
+        10,
+        2,
+    ]
+    assert [
+        (segment["start_day"], segment["end_day"])
+        for segment in parsed["segments"]
+    ] == [(1, 7), (8, 10)]
+
+
+def test_explicit_split_periods_cannot_overlap_or_leave_the_trip_bounds():
+    with pytest.raises(ValueError, match="overlap"):
+        parse_user_requirements(
+            "Days 1-7 need 10 GB and days 7-10 need 2 GB",
+            CURRENT,
+            10,
+        )
+    with pytest.raises(ValueError, match="trip dates"):
+        parse_user_requirements(
+            "For the first 11 days I need 10 GB",
+            CURRENT,
+            10,
+        )
 
 
 def test_latest_message_overrides_conflicts_and_preserves_other_constraints():

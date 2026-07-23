@@ -12,7 +12,7 @@ from uuid import uuid4
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, PrivateAttr, ValidationError
 
 
 LOGGER = logging.getLogger(__name__)
@@ -26,21 +26,30 @@ class GeminiRateLimited(GeminiUnavailable):
     """Raised while the provider is rejecting requests for quota/rate limits."""
 
 
+class GeminiConversationUnavailable(GeminiUnavailable):
+    """Raised when a stored Gemini conversation can no longer be continued."""
+
+
 _RATE_LIMIT_LOCK = threading.Lock()
 _RATE_LIMITED_UNTIL = 0.0
 
 
-def _rate_limit_status(error):
+def _error_status(error):
     for value in (
         getattr(error, "status_code", None),
         getattr(error, "code", None),
         getattr(getattr(error, "response", None), "status_code", None),
     ):
         try:
-            if int(value) == 429:
-                return True
+            return int(value)
         except (TypeError, ValueError):
             continue
+    return None
+
+
+def _rate_limit_status(error):
+    if _error_status(error) == 429:
+        return True
     return "ratelimit" in type(error).__name__.replace("_", "").lower()
 
 
@@ -95,10 +104,6 @@ class UsageSegmentDecision(BaseModel):
     start_day: int = Field(ge=1)
     end_day: int = Field(ge=1)
     usage_interpretation: str
-    data_requirement_gb: float = Field(ge=0)
-    local_minutes_requirement: int = Field(ge=0)
-    international_minutes_requirement: int = Field(ge=0)
-    sms_requirement: int = Field(ge=0)
 
 
 class PackagePlanItemDecision(BaseModel):
@@ -108,43 +113,40 @@ class PackagePlanItemDecision(BaseModel):
     coverage_end_day: int = Field(ge=1)
     activation_order: int = Field(ge=1)
     assigned_segment_id: Optional[str] = None
-    reason_for_item: str
+    reason_for_item: Optional[str] = None
 
 
 class RecommendationDecision(BaseModel):
-    interpreted_latest_request: Optional[str] = None
     trip_segments: list[UsageSegmentDecision] = Field(default_factory=list)
     package_items: list[PackagePlanItemDecision] = Field(min_length=1)
-    reason: str
-    why_it_fits: list[str] = Field(default_factory=list, max_length=4)
-    usage_summary: str
-    modification_summary: Optional[str] = None
-    tradeoff_summary: Optional[str] = None
+    modification_summary: str = Field(min_length=1, max_length=180)
+    _interaction_id: Optional[str] = PrivateAttr(default=None)
 
 
-SYSTEM_INSTRUCTION = """
-Select one complete roaming plan from the supplied catalogue. Listed packages may be repeated,
-stacked, or mixed.
+PLANNER_SYSTEM_INSTRUCTION = """
+You are the Package Planner. Return the cheapest valid structural roaming plan
+using only the package catalogue supplied in the current or earlier stored
+planner interaction. Packages may be repeated, stacked, or mixed.
 
-Rules:
-1. Use only supplied package codes; never alter package facts.
-2. Cover all trip days exactly once with continuous activation order.
-3. trip_requirements and the latest user instruction are hard constraints. Do not add headroom.
-4. Treat each refinement as a change to the current plan, not a fresh plan. Every value in
-   active_constraints.preservation_minimums is a hard floor copied from the current plan for a
-   service the user did not ask to change. Never reduce those untouched services. If
-   active_constraints.reset_constraints is true, abandon the earlier constraints and follow the
-   new direction instead.
-5. A numeric request applies across the entire trip by default. Every scheduled part of the plan
-   must carry its proportional share for each requirement_scope.trip_wide_metrics entry. Higher
-   cost is acceptable when necessary to meet the request.
-6. Create or preserve different periods only when active_constraints.segments explicitly lists
-   them. Otherwise do not confine a requested allowance to one day or part of the trip.
-7. Prefer exact duration, then less unused validity, lower cost, less waste, and fewer activations.
-8. Return only the structured response with concise explanations.
+- Cover every trip day exactly once and use continuous activation order.
+- Treat trip_requirements and any exact split requirements as authoritative.
+- Meet or exceed every exact requirement; do not add a safety buffer.
+- The current_plan is authoritative application state even when an intervening
+  Smart History hit did not create a planner interaction.
+- Trip-wide metrics must remain available across the whole trip. Use separate
+  periods only when exact_split_requirements defines them.
+- validated_baseline_plan is already valid. Return that schedule unless you find a strictly
+  cheaper valid schedule. Never overlap rows; use quantity when the same package is stacked.
+- Minimize total price first, then allowance excess, then activation count.
+- Do not interpret raw user language; the requirements interpreter has already
+  resolved it into exact structured values.
+- Return only the requested JSON structure. Keep modification_summary to one
+  short explanation for the user.
 
-Python reloads package facts and validates arithmetic, coverage, and requirement scope.
+The server reloads package facts and validates coverage, arithmetic, and every requirement.
 """.strip()
+# Compatibility for code importing the original constant name.
+SYSTEM_INSTRUCTION = PLANNER_SYSTEM_INSTRUCTION
 
 
 def _make_client(api_key, timeout_seconds):
@@ -195,10 +197,10 @@ def request_recommendation_decision(
     *,
     api_key,
     model,
-    timeout_seconds=45,
+    previous_interaction_id=None,
+    request_kind=None,
+    timeout_seconds=30,
     client=None,
-    invalid_decision=None,
-    validation_errors=None,
     request_log_dir=None,
     rate_limit_cooldown_seconds=60,
 ):
@@ -212,26 +214,18 @@ def request_recommendation_decision(
         )
         raise GeminiRateLimited("Gemini rate-limit cooldown is active.")
 
-    request_context = dict(context)
-    if invalid_decision is not None:
-        request_context["CORRECTION_REQUEST"] = {
-            "previous_invalid_plan": invalid_decision,
-            "validation_errors": validation_errors or [],
-            "instruction": "Correct only the listed failures and return one complete valid plan.",
-        }
-
     LOGGER.info(
         "%s started",
         "Gemini refinement request"
-        if context.get("latest_user_instruction")
+        if previous_interaction_id
         else "Gemini recommendation request",
     )
     try:
         active_client = client or _make_client(api_key, timeout_seconds)
         api_request = {
             "model": model,
-            "system_instruction": SYSTEM_INSTRUCTION,
-            "input": json.dumps(request_context, separators=(",", ":"), default=str),
+            "system_instruction": PLANNER_SYSTEM_INSTRUCTION,
+            "input": json.dumps(context, separators=(",", ":"), default=str),
             "generation_config": {
                 "thinking_level": "high",
             },
@@ -240,22 +234,32 @@ def request_recommendation_decision(
                 "mime_type": "application/json",
                 "schema": RecommendationDecision.model_json_schema(),
             },
-            "store": False,
+            "store": True,
             "timeout": timeout_seconds,
         }
-        request_kind = (
-            "correction"
-            if invalid_decision is not None
-            else "refinement"
-            if context.get("latest_user_instruction")
-            else "initial"
+        if previous_interaction_id:
+            api_request["previous_interaction_id"] = previous_interaction_id
+        resolved_request_kind = request_kind or (
+            "refinement" if previous_interaction_id else "initial"
         )
-        _save_request_payload(request_log_dir, request_kind, api_request)
+        _save_request_payload(
+            request_log_dir,
+            f"planner_{resolved_request_kind}",
+            api_request,
+        )
         interaction = active_client.interactions.create(**api_request)
         output_text = getattr(interaction, "output_text", None)
         if not output_text:
             raise GeminiUnavailable("Gemini returned no structured response.")
         decision = RecommendationDecision.model_validate_json(output_text)
+        interaction_id = getattr(interaction, "id", None)
+        if interaction_id:
+            decision._interaction_id = str(interaction_id)
+        else:
+            LOGGER.warning(
+                "Gemini response did not include an interaction ID; "
+                "the next request will start a new conversation"
+            )
         LOGGER.info("Gemini response received")
         return decision
     except GeminiUnavailable:
@@ -278,5 +282,14 @@ def request_recommendation_decision(
                 _safe_error_detail(error, api_key),
             )
             raise GeminiRateLimited("Gemini is temporarily rate limited.") from error
+        status = _error_status(error)
+        if previous_interaction_id and status in {400, 404, 410}:
+            LOGGER.info(
+                "Stored Gemini conversation is unavailable status=%s",
+                status,
+            )
+            raise GeminiConversationUnavailable(
+                "The stored Gemini conversation is no longer available."
+            ) from error
         LOGGER.warning("Gemini request failed type=%s", type(error).__name__)
         raise GeminiUnavailable("Gemini is temporarily unavailable.") from error

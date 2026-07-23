@@ -3,10 +3,13 @@
 import logging
 import statistics
 from datetime import date
+from decimal import Decimal
+
+from .recommendation_values import METRIC_NAMES, canonical_decimal
 
 
 LOGGER = logging.getLogger(__name__)
-METRICS = ("data_gb", "local_minutes", "international_minutes", "sms")
+METRICS = METRIC_NAMES
 RECENCY_WEIGHTS = (0.10, 0.12, 0.15, 0.18, 0.20, 0.25)
 OUTLIER_CHANGE_THRESHOLD = 0.30
 
@@ -142,7 +145,25 @@ def analyse_usage(records):
             effective_weights[index] = 0.0
         total_weight = sum(effective_weights)
         effective_weights = [weight / total_weight for weight in effective_weights]
-        estimate = sum(value * weight for value, weight in zip(values, effective_weights))
+        decimal_weights = [
+            Decimal("0") if index in excluded else Decimal(str(weight))
+            for index, weight in enumerate(RECENCY_WEIGHTS)
+        ]
+        decimal_total_weight = sum(decimal_weights, Decimal("0"))
+        estimate = float(
+            canonical_decimal(
+                sum(
+                    (
+                        canonical_decimal(getattr(record, metric), field=metric)
+                        * weight
+                        for record, weight in zip(ordered, decimal_weights)
+                    ),
+                    Decimal("0"),
+                )
+                / decimal_total_weight,
+                field=metric,
+            )
+        )
         weighted_estimate[metric] = estimate
 
         excluded_months = [_month_label(ordered[index]) for index in excluded]
@@ -237,7 +258,14 @@ def scale_usage_to_trip(monthly_estimate, trip_days):
     if not isinstance(trip_days, int) or trip_days < 1:
         raise ValueError("Trip duration must be at least one day.")
     return {
-        metric: float(monthly_estimate[metric]) * trip_days / 30
+        metric: float(
+            canonical_decimal(
+                canonical_decimal(monthly_estimate[metric], field=metric)
+                * trip_days
+                / 30,
+                field=metric,
+            )
+        )
         for metric in METRICS
     }
 

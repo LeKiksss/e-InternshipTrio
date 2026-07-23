@@ -22,25 +22,35 @@ ROAMING_PACKAGE_COLUMNS = {
 
 
 def upgrade_sqlite_schema():
-    """Add missing package columns without replacing any existing table or row."""
+    """Apply additive SQLite upgrades without replacing existing tables or rows."""
 
     if db.engine.dialect.name != "sqlite":
         return
 
     inspector = inspect(db.engine)
-    if "roaming_package" not in inspector.get_table_names():
-        return
-
-    existing = {column["name"] for column in inspector.get_columns("roaming_package")}
-    with db.engine.begin() as connection:
-        for name, definition in ROAMING_PACKAGE_COLUMNS.items():
-            if name not in existing:
-                connection.execute(
-                    text(f'ALTER TABLE roaming_package ADD COLUMN "{name}" {definition}')
+    if "roaming_package" in inspector.get_table_names():
+        existing = {
+            column["name"]
+            for column in inspector.get_columns("roaming_package")
+        }
+        with db.engine.begin() as connection:
+            for name, definition in ROAMING_PACKAGE_COLUMNS.items():
+                if name not in existing:
+                    connection.execute(
+                        text(
+                            f'ALTER TABLE roaming_package ADD COLUMN "{name}" {definition}'
+                        )
+                    )
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "ix_roaming_package_package_code ON roaming_package (package_code)"
                 )
-        connection.execute(
-            text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS "
-                "ix_roaming_package_package_code ON roaming_package (package_code)"
             )
-        )
+
+    # This project intentionally uses an additive, migration-free SQLite
+    # upgrade path. Creating this new table through SQLAlchemy metadata keeps
+    # existing databases and every existing row intact.
+    from .models import SmartRecommendationHistory
+
+    SmartRecommendationHistory.__table__.create(bind=db.engine, checkfirst=True)

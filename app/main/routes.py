@@ -1,8 +1,18 @@
 import json
 import hashlib
+import logging
 from datetime import datetime
 
-from flask import Blueprint, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import current_user, login_required
 
 from app import COUNTRY_FLAGS, seed_database
@@ -18,6 +28,16 @@ from app.models import (
 from app.services.mock_bill_analysis import analyse_bill
 from app.services.mock_complaints import classify_complaint
 from app.services.mock_diagnostics import result_for_state
+from app.services.gemini_recommender import (
+    GeminiRateLimited,
+    GeminiUnavailable,
+)
+from app.services.gemini_requirements_interpreter import (
+    interpret_requirements_locally,
+    request_requirements_interpretation,
+    validate_interpreted_requirements,
+)
+from app.services.recommendation_values import canonical_string
 from app.services.roaming_chat_intent import classify_roaming_chat_intent
 from app.services.roaming_history import (
     append_recommendation_history,
@@ -27,10 +47,15 @@ from app.services.roaming_history import (
     start_recommendation_history,
 )
 from app.services.roaming_recommendation import build_recommendation
+from app.services.user_requirement_parser import parse_user_requirements
 
 
 main_bp = Blueprint("main", __name__)
+LOGGER = logging.getLogger(__name__)
 WORKFLOW_NAMES = {"network", "bill", "complaints", "roaming"}
+ROAMING_GEMINI_INTERACTION_KEY = "roaming_gemini_interaction_id"
+ROAMING_PLANNER_INITIALIZED_KEY = "roaming_planner_initialized"
+ROAMING_PENDING_CLARIFICATION_KEY = "roaming_pending_clarification"
 
 
 def _append_roaming_conversation(conversation, user_message, assistant_message):
@@ -41,6 +66,156 @@ def _append_roaming_conversation(conversation, user_message, assistant_message):
         ]
     )
     return conversation[-12:]
+
+
+def _requirements_state_from_recommendation(recommendation):
+    stored = (recommendation or {}).get("_requirements_state")
+    if isinstance(stored, dict):
+        return stored
+
+    trip = (recommendation or {}).get("trip", {})
+    values = (
+        (recommendation or {})
+        .get("usage_analysis", {})
+        .get("requirements", {})
+    )
+    segments = (recommendation or {}).get("segments") or []
+    split_details = [
+        {
+            "start_day": int(segment["start_day"]),
+            "end_day": int(segment["end_day"]),
+            **{
+                metric: canonical_string(
+                    segment.get("requirements", {}).get(metric, 0),
+                    field=metric,
+                )
+                for metric in (
+                    "data_gb",
+                    "local_minutes",
+                    "international_minutes",
+                    "sms",
+                )
+            },
+        }
+        for segment in segments
+    ]
+    return {
+        **{
+            metric: canonical_string(values.get(metric, 0), field=metric)
+            for metric in (
+                "data_gb",
+                "local_minutes",
+                "international_minutes",
+                "sms",
+            )
+        },
+        "period_days": int(trip.get("trip_days", 0)),
+        "split": bool(split_details),
+        "split_details": split_details or None,
+    }
+
+
+def _current_plan_allowances(current):
+    selection = (current or {}).get("selection") or {}
+    fields = {
+        "data_gb": "total_data_gb",
+        "local_minutes": "total_local_minutes",
+        "international_minutes": "total_international_minutes",
+        "sms": "total_sms",
+    }
+    return {
+        metric: canonical_string(selection.get(field, 0), field=metric)
+        for metric, field in fields.items()
+    }
+
+
+def _roaming_interpreter_context(message, current):
+    pending = session.get(ROAMING_PENDING_CLARIFICATION_KEY)
+    if not isinstance(pending, dict):
+        pending = None
+    context = {
+        "raw_user_message": message,
+        "current_requirements": _requirements_state_from_recommendation(
+            current
+        ),
+        "trip_context": {
+            "destination": current.get("destination"),
+            **(current.get("trip") or {}),
+        },
+        "current_plan_allowances": _current_plan_allowances(current),
+        "relative_increments": {
+            "data_gb": "0.001000",
+            "local_minutes": "1.000000",
+            "international_minutes": "1.000000",
+            "sms": "1.000000",
+        },
+    }
+    if pending:
+        context["pending_clarification"] = {
+            "original_request": pending.get("original_request"),
+            "prior_answers": list(pending.get("prior_answers") or []),
+        }
+    return context, pending
+
+
+def _interpret_roaming_refinement(message, current):
+    context, pending = _roaming_interpreter_context(message, current)
+    decision = request_requirements_interpretation(
+        context,
+        api_key=current_app.config.get("GEMINI_API_KEY", ""),
+        model=current_app.config.get(
+            "GEMINI_INTERPRETER_MODEL",
+            "gemini-3.5-flash-lite",
+        ),
+        timeout_seconds=current_app.config.get(
+            "GEMINI_TIMEOUT_SECONDS",
+            30,
+        ),
+        request_log_dir=current_app.config.get("GEMINI_REQUEST_LOG_DIR"),
+        rate_limit_cooldown_seconds=current_app.config.get(
+            "GEMINI_RATE_LIMIT_COOLDOWN_SECONDS",
+            60,
+        ),
+    )
+    interpreted_state = validate_interpreted_requirements(
+        decision,
+        (current.get("trip") or {}).get("trip_days"),
+        current_requirements=context["current_requirements"],
+    )
+    return decision, interpreted_state, pending
+
+
+def _combined_pending_message(context):
+    pending = context.get("pending_clarification")
+    original = (
+        str(pending.get("original_request") or "")
+        if isinstance(pending, dict)
+        else ""
+    )
+    answer = str(context.get("raw_user_message") or "")
+    return f"{original} {answer}".strip()
+
+
+def _has_local_adjustment(message, current):
+    trip_days = int((current.get("trip") or {}).get("trip_days") or 0)
+    try:
+        parsed = parse_user_requirements(
+            message,
+            current_recommendation=current,
+            trip_days=trip_days,
+        )
+    except ValueError:
+        return False
+    return bool(
+        parsed.get("minimums")
+        or parsed.get("exact_targets")
+        or parsed.get("comparative")
+        or parsed.get("segments")
+        or parsed.get("maximum_price_aed") is not None
+        or parsed.get("minimum_validity_days") is not None
+        or parsed.get("restore_original")
+        or parsed.get("reset_constraints")
+    )
 
 
 def _ensure_roaming_history(current):
@@ -261,12 +436,14 @@ def roaming_recommend():
         return jsonify({"ok": False, "message": "Choose a destination first."}), 400
     if payload.get("simulate") == "database":
         return jsonify({"ok": False, "message": "The package catalogue is temporarily unavailable."}), 503
+    interaction_state = {}
     try:
         recommendation = build_recommendation(
             current_user,
             destination,
             payload.get("start_date"),
             payload.get("end_date"),
+            interaction_state=interaction_state,
         )
     except ValueError as error:
         return jsonify({"ok": False, "message": str(error)}), 400
@@ -275,6 +452,15 @@ def roaming_recommend():
     session["roaming_conversation"] = []
     session["roaming_history_journey_id"] = history_entry.journey_id
     session["roaming_history_cursor_id"] = history_entry.id
+    session.pop(ROAMING_GEMINI_INTERACTION_KEY, None)
+    session.pop(ROAMING_PENDING_CLARIFICATION_KEY, None)
+    if interaction_state.get("interaction_id"):
+        session[ROAMING_GEMINI_INTERACTION_KEY] = interaction_state[
+            "interaction_id"
+        ]
+    session[ROAMING_PLANNER_INITIALIZED_KEY] = bool(
+        interaction_state.get("interaction_id")
+    )
     session.modified = True
     return jsonify({"ok": True, **recommendation})
 
@@ -355,15 +541,133 @@ def roaming_refine():
                 "recommendation_id": current["recommendation_id"],
             }
         )
+    interaction_state = {}
+    interpreted_state = None
+    decision = None
+    pending = None
+    force_python_fallback = False
+    upstream_rate_limited = False
+    effective_message = message
+    api_key = current_app.config.get("GEMINI_API_KEY", "")
+    if api_key:
+        try:
+            decision, interpreted_state, pending = (
+                _interpret_roaming_refinement(message, current)
+            )
+        except (GeminiRateLimited, GeminiUnavailable, ValueError) as error:
+            upstream_rate_limited = isinstance(error, GeminiRateLimited)
+            force_python_fallback = True
+            LOGGER.warning(
+                "Roaming interpreter fallback activated type=%s rate_limited=%s",
+                type(error).__name__,
+                upstream_rate_limited,
+            )
+            context, pending = _roaming_interpreter_context(message, current)
+            decision = interpret_requirements_locally(context)
+            if decision is not None:
+                interpreted_state = validate_interpreted_requirements(
+                    decision,
+                    (current.get("trip") or {}).get("trip_days"),
+                    current_requirements=context["current_requirements"],
+                )
+            else:
+                effective_message = _combined_pending_message(context)
+                if not _has_local_adjustment(effective_message, current):
+                    session.pop(ROAMING_PENDING_CLARIFICATION_KEY, None)
+                    prefix = (
+                        "The Gemini request limit was reached. "
+                        if upstream_rate_limited
+                        else ""
+                    )
+                    reply = (
+                        f"{prefix}I can still adjust the plan locally. "
+                        "Should I change data, local minutes, international "
+                        "minutes, SMS, price, or validity?"
+                    )
+                    session["roaming_conversation"] = (
+                        _append_roaming_conversation(
+                            conversation,
+                            message,
+                            reply,
+                        )
+                    )
+                    session.modified = True
+                    return jsonify(
+                        {
+                            "ok": True,
+                            "response_type": "message",
+                            "clarification_required": True,
+                            "message": reply,
+                            "recommendation_id": current[
+                                "recommendation_id"
+                            ],
+                        }
+                    )
+    else:
+        force_python_fallback = True
+        context, pending = _roaming_interpreter_context(message, current)
+        decision = interpret_requirements_locally(context)
+        if decision is not None:
+            interpreted_state = validate_interpreted_requirements(
+                decision,
+                (current.get("trip") or {}).get("trip_days"),
+                current_requirements=context["current_requirements"],
+            )
+        else:
+            effective_message = _combined_pending_message(context)
+
+    if decision is not None and decision.clarification_required:
+        if pending:
+            pending["prior_answers"] = [
+                *(pending.get("prior_answers") or []),
+                message[:500],
+            ][-4:]
+        else:
+            pending = {
+                "original_request": message[:500],
+                "prior_answers": [],
+            }
+        session[ROAMING_PENDING_CLARIFICATION_KEY] = pending
+        prefix = (
+            "The Gemini request limit was reached, but I can continue "
+            "locally. "
+            if upstream_rate_limited
+            else ""
+        )
+        reply = f"{prefix}{decision.clarification_question}"
+        session["roaming_conversation"] = _append_roaming_conversation(
+            conversation,
+            message,
+            reply,
+        )
+        session.modified = True
+        return jsonify(
+            {
+                "ok": True,
+                "response_type": "message",
+                "clarification_required": True,
+                "message": reply,
+                "recommendation_id": current["recommendation_id"],
+            }
+        )
+    session.pop(ROAMING_PENDING_CLARIFICATION_KEY, None)
+
     try:
         recommendation = build_recommendation(
             current_user,
             destination,
             trip.get("start_date"),
             trip.get("end_date"),
-            latest_message=message,
+            latest_message=effective_message,
             current_recommendation=current,
             conversation=conversation,
+            previous_interaction_id=session.get(
+                ROAMING_GEMINI_INTERACTION_KEY
+            ),
+            interaction_state=interaction_state,
+            interpreted_state=interpreted_state,
+            force_python_fallback=force_python_fallback,
+            upstream_gemini_rate_limited=upstream_rate_limited,
         )
     except ValueError as error:
         return jsonify({"ok": False, "message": str(error)}), 400
@@ -387,6 +691,14 @@ def roaming_refine():
         assistant_message,
     )
     session["roaming_current_recommendation"] = recommendation
+    if interaction_state.get("reset_conversation"):
+        session.pop(ROAMING_GEMINI_INTERACTION_KEY, None)
+        session[ROAMING_PLANNER_INITIALIZED_KEY] = False
+    elif interaction_state.get("interaction_id"):
+        session[ROAMING_GEMINI_INTERACTION_KEY] = interaction_state[
+            "interaction_id"
+        ]
+        session[ROAMING_PLANNER_INITIALIZED_KEY] = True
     session.modified = True
     return jsonify(
         {"ok": True, "response_type": "recommendation", **recommendation}
@@ -497,6 +809,9 @@ def reset_demo():
     session.pop("roaming_conversation", None)
     session.pop("roaming_history_journey_id", None)
     session.pop("roaming_history_cursor_id", None)
+    session.pop(ROAMING_GEMINI_INTERACTION_KEY, None)
+    session.pop(ROAMING_PLANNER_INITIALIZED_KEY, None)
+    session.pop(ROAMING_PENDING_CLARIFICATION_KEY, None)
     session.modified = True
     clear_recommendation_history(current_user.id)
     seed_database()

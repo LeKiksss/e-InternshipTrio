@@ -44,8 +44,8 @@ def packages():
         ("I need 10 GB", "total_data_gb", 10),
         ("I need at least 500 international minutes", "total_international_minutes", 500),
         ("I need 100 SMS", "total_sms", 100),
-        ("Give me more data", "total_data_gb", 25),
-        ("I need more calls", "total_local_minutes", 875),
+        ("Give me more data", "total_data_gb", 20.001),
+        ("I need more calls", "total_local_minutes", 701),
     ],
 )
 def test_numeric_and_more_requests_are_hard_constraints(app, message, metric, minimum):

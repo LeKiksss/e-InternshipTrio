@@ -2,7 +2,8 @@
   "use strict";
   document.addEventListener("DOMContentLoaded", () => {
     if (!window.App || !document.querySelector(".app-shell")) return;
-    const { $, $$, closeSheet } = window.App;
+    const { $, $$, closeSheet, animateView } = window.App;
+    const screenOrder = ["home", "network-bill", "complaints", "roaming", "profile"];
     const titles = {
       home: ["Good afternoon", `Hi, ${$("#header-title").textContent.replace("Hi, ", "")}`],
       "network-bill": ["Smart insights", "Network & bill"],
@@ -11,10 +12,15 @@
       profile: ["Your account", "Profile"],
     };
 
-    function navigate(screen, targetSegment, { historyMode = "push" } = {}) {
-      if (!document.querySelector(`.screen[data-screen="${screen}"]`)) return;
+    function navigate(screen, targetSegment, { historyMode = "push", direction = null } = {}) {
+      const incoming = document.querySelector(`.screen[data-screen="${screen}"]`);
+      if (!incoming) return;
+      const previous = $(".app-shell").dataset.currentScreen;
+      const previousIndex = screenOrder.indexOf(previous);
+      const index = screenOrder.indexOf(screen);
+      const resolvedDirection = direction || (previousIndex < 0 || previous === screen ? "none" : index >= previousIndex ? "forward" : "back");
       $$(".screen").forEach((panel) => panel.classList.toggle("active", panel.dataset.screen === screen));
-      const index = ["home", "network-bill", "complaints", "roaming", "profile"].indexOf(screen);
+      animateView(incoming, resolvedDirection);
       $$(".bottom-nav button").forEach((button) => button.classList.toggle("active", button.dataset.nav === screen));
       $(".nav-indicator").style.left = `calc(${index * 20 + 10}% - 18px)`;
       $(".app-shell").dataset.currentScreen = screen;
@@ -40,9 +46,9 @@
     window.addEventListener("popstate", (event) => {
       if (event.state?.workflow) return;
       const screen = event.state?.screen || location.hash.slice(1).split("/")[0] || "home";
-      if (titles[screen]) navigate(screen, null, { historyMode: "none" });
+      if (titles[screen]) navigate(screen, null, { historyMode: "none", direction: "back" });
     });
     const initial = location.hash.slice(1).split("/")[0];
-    navigate(titles[initial] ? initial : "home", null, { historyMode: "replace" });
+    navigate(titles[initial] ? initial : "home", null, { historyMode: "replace", direction: "none" });
   });
 })();

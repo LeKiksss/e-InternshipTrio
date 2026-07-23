@@ -2,13 +2,16 @@
   "use strict";
   document.addEventListener("DOMContentLoaded", async () => {
     if (!window.App || !window.WorkflowState || !document.querySelector("#roaming-planner")) return;
-    const { $, $$, api, delay, toast, confirmAction } = window.App;
+    const { $, $$, api, delay, toast, confirmAction, animateView } = window.App;
+    const roamingScreen = document.querySelector('.screen[data-screen="roaming"]');
+    const appScroll = $("#app-scroll");
     const intro = $("#roaming-intro"), planner = $("#roaming-planner"), loading = $("#roaming-loading"), result = $("#roaming-result"), empty = $("#roaming-empty");
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); const minDate = tomorrow.toISOString().slice(0, 10);
     $("#trip-start").min = minDate; $("#trip-end").min = minDate;
 
     const controller = window.WorkflowState.create({
       name: "roaming",
+      viewOrder: ["landing", "step1", "step2", "loading", "step3", "result"],
       initialState: {
         destination: "", start: "", end: "", duration: 0,
         recommendationId: null, recommendation: null, chat: [], savedId: null,
@@ -22,9 +25,12 @@
           viewingSaved: state.viewingSaved, carrierAcknowledged: false,
         };
       },
-      render(view, state) {
+      render(view, state, { direction = "none" } = {}) {
         intro.hidden = view !== "landing";
         planner.hidden = view === "landing";
+        appScroll.classList.toggle("destination-step-active", view === "step1");
+        roamingScreen.classList.toggle("destination-step-active", view === "step1");
+        planner.classList.toggle("destination-step-active", view === "step1");
         $$('[data-roaming-step]').forEach((panel) => {
           const active = panel.dataset.roamingStep === view.replace("step", "");
           panel.hidden = !active; panel.classList.toggle("active", active);
@@ -39,6 +45,16 @@
         if (view === "landing") { renderRecent(); void loadSavedRecommendations(); }
         restoreInputs();
         $("#app-scroll").scrollTop = 0;
+        const transitionTarget = view === "landing"
+          ? intro
+          : view === "loading"
+            ? loading
+            : view === "result"
+              ? result
+              : view === "empty"
+                ? empty
+                : document.querySelector(`[data-roaming-step="${view.replace("step", "")}"]`);
+        animateView(transitionTarget, direction);
       },
     });
 
@@ -159,7 +175,7 @@
       $("#package-destination").textContent = recommendation.destination;
       $("#package-trip-duration").textContent = `${recommendation.trip.trip_days} days`;
       $("#package-activation-count").textContent = selection.activation_count;
-      $("#package-network").textContent = "Automatic partner selection";
+      $("#package-network").textContent = "Connected to preferred partner";
       renderActivationSequence();
       renderAcknowledgement();
     }
@@ -284,7 +300,7 @@
     $("#send-roaming-adjustment").addEventListener("click", () => submitAdjustment());
     $("#roaming-adjustment").addEventListener("input", syncAdjustmentButton);
     $("#roaming-adjustment").addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submitAdjustment(); } });
-    $("#carrier-acknowledgement").addEventListener("change", (event) => { controller.update({ carrierAcknowledged: event.currentTarget.checked }); renderAcknowledgement(); if (event.currentTarget.checked) toast("Network note acknowledged. Activation codes are now available."); });
+    $("#carrier-acknowledgement").addEventListener("change", (event) => { controller.update({ carrierAcknowledged: event.currentTarget.checked }); renderAcknowledgement(); if (event.currentTarget.checked) toast("Preferred partner confirmed. Activation codes are now available."); });
     $("#continue-roaming-plan").addEventListener("click", () => { controller.update({ completed: true, viewingSaved: false }); controller.go("result"); });
     $("#roaming-result-back").addEventListener("click", () => controller.go(controller.state.viewingSaved ? "landing" : "step3"));
     $("#save-recommendation").addEventListener("click", saveSelection);

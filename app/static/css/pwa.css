@@ -1,0 +1,247 @@
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --app-viewport-height: 100dvh;
+  --visual-viewport-height: 100dvh;
+}
+
+.pwa-install-prompt {
+  position: absolute;
+  z-index: 65;
+  left: 14px;
+  right: 14px;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid rgba(230, 0, 0, .15);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, .97);
+  box-shadow: 0 14px 34px rgba(27, 30, 43, .16);
+  backdrop-filter: blur(18px);
+}
+.app-page .pwa-install-prompt { bottom: 88px; }
+.app-page:has(.screen[data-screen="roaming"].active.destination-step-active) .pwa-install-prompt {
+  display: none !important;
+}
+.pwa-install-open {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 37px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 3px;
+  text-align: left;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+.pwa-install-open > span:last-child { min-width: 0; }
+.pwa-install-open b, .pwa-install-open small { display: block; }
+.pwa-install-open b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.pwa-install-open small { margin-top: 2px; color: var(--muted); font-size: 9px; }
+.pwa-install-icon, .pwa-sheet-icon {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--red);
+  font-weight: 900;
+  letter-spacing: -2px;
+}
+.pwa-install-icon { width: 35px; height: 35px; border-radius: 10px; font-size: 15px; }
+.pwa-sheet-icon { width: 52px; height: 52px; margin-bottom: 13px; border-radius: 16px; font-size: 21px; }
+.pwa-install-dismiss {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  color: #6b6b73;
+  background: #f2f2f4;
+  font-size: 20px;
+  cursor: pointer;
+}
+.pwa-install-sheet { padding-top: 30px; }
+.pwa-install-steps { display: grid; gap: 10px; margin: 18px 0; padding: 0; list-style: none; counter-reset: install-step; }
+.pwa-install-steps li { position: relative; min-height: 34px; padding: 8px 8px 8px 42px; border-radius: 12px; background: #f6f7f9; font-size: 11px; line-height: 1.45; counter-increment: install-step; }
+.pwa-install-steps li::before { content: counter(install-step); position: absolute; left: 9px; top: 7px; width: 25px; height: 25px; display: grid; place-items: center; border-radius: 8px; color: #fff; background: var(--red); font-size: 10px; font-weight: 850; }
+
+.pwa-update-toast {
+  position: absolute;
+  z-index: 160;
+  left: 14px;
+  right: 14px;
+  bottom: 15px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 15px;
+  color: #fff;
+  background: #25252a;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .25);
+}
+.app-page .pwa-update-toast { bottom: 87px; }
+.pwa-update-toast b, .pwa-update-toast small { display: block; }
+.pwa-update-toast b { font-size: 10.5px; }
+.pwa-update-toast small { margin-top: 2px; color: #d4d4d8; font-size: 8.5px; }
+.pwa-update-toast button { min-height: 34px; padding: 0 10px; border: 0; border-radius: 9px; color: #fff; background: var(--red); font-size: 9px; font-weight: 800; cursor: pointer; }
+.pwa-update-toast [data-pwa-update-later] { color: #e4e4e7; background: transparent; }
+
+@media (max-width: 760px), (display-mode: standalone) {
+  html, body { width: 100%; max-width: 100%; min-height: 100%; overflow-x: hidden; touch-action: pan-x pan-y; }
+  body { min-height: var(--app-viewport-height, 100dvh); overflow-y: auto; overscroll-behavior-y: none; }
+  .desktop-stage,
+  .desktop-stage[data-preview="expanded"] {
+    display: block;
+    width: 100%;
+    min-height: var(--app-viewport-height, 100dvh);
+    padding: 0;
+    background: #f6f7f9;
+  }
+  .phone-device,
+  .desktop-stage[data-preview="expanded"] .phone-device {
+    width: 100%;
+    height: var(--app-viewport-height, 100dvh);
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .phone-screen,
+  .desktop-stage[data-preview="expanded"] .phone-screen {
+    width: 100%;
+    overflow-x: hidden;
+    border-radius: 0;
+  }
+  .phone-notch,
+  .phone-status,
+  .home-indicator,
+  .preview-tools,
+  .desktop-disclaimer { display: none !important; }
+
+  .app-shell { padding-top: var(--safe-top); }
+  .app-header {
+    padding-left: calc(17px + var(--safe-left));
+    padding-right: calc(17px + var(--safe-right));
+  }
+  .app-scroll {
+    padding-bottom: calc(88px + var(--safe-bottom));
+    scroll-padding-top: calc(70px + var(--safe-top));
+    scroll-padding-bottom: calc(96px + var(--safe-bottom));
+  }
+  .screen {
+    padding-left: calc(16px + var(--safe-left));
+    padding-right: calc(16px + var(--safe-right));
+  }
+  .auth-shell {
+    min-height: var(--app-viewport-height, 100dvh);
+    padding-top: calc(28px + var(--safe-top));
+    padding-right: calc(24px + var(--safe-right));
+    padding-bottom: calc(28px + var(--safe-bottom));
+    padding-left: calc(24px + var(--safe-left));
+  }
+  .register-shell { padding-top: calc(24px + var(--safe-top)); }
+
+  .bottom-nav {
+    height: calc(68px + var(--safe-bottom));
+    padding-right: calc(7px + var(--safe-right));
+    padding-bottom: max(9px, var(--safe-bottom));
+    padding-left: calc(7px + var(--safe-left));
+  }
+  .bottom-nav button { min-width: 0; min-height: 50px; }
+
+  .modal-backdrop,
+  .pwa-install-backdrop {
+    position: fixed;
+    padding-top: calc(40px + var(--safe-top));
+    padding-right: var(--safe-right);
+    padding-left: var(--safe-left);
+  }
+  .sheet {
+    max-height: calc(var(--app-viewport-height, 100dvh) - var(--safe-top));
+    padding-bottom: calc(28px + var(--safe-bottom));
+  }
+  .sheet-close { right: calc(12px + var(--safe-right)); }
+  .flash-stack {
+    top: calc(12px + var(--safe-top));
+    right: calc(16px + var(--safe-right));
+    left: calc(16px + var(--safe-left));
+  }
+  .toast-region {
+    right: calc(14px + var(--safe-right));
+    bottom: calc(80px + var(--safe-bottom));
+    left: calc(14px + var(--safe-left));
+  }
+  .pwa-install-prompt,
+  .pwa-update-toast {
+    position: fixed;
+    right: calc(14px + var(--safe-right));
+    left: calc(14px + var(--safe-left));
+    bottom: calc(14px + var(--safe-bottom));
+  }
+  .app-page .pwa-install-prompt,
+  .app-page .pwa-update-toast { bottom: calc(78px + var(--safe-bottom)); }
+
+  html.keyboard-open .bottom-nav {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+  html.keyboard-open .pwa-install-prompt,
+  html.keyboard-open .pwa-update-toast { display: none !important; }
+  html.keyboard-open .app-scroll { scroll-padding-top: 8px; }
+  html.keyboard-open .adjustment-chat { scroll-margin-top: 0; }
+  html.keyboard-open .planner-step[data-roaming-step="3"] {
+    padding-bottom: calc(var(--visual-viewport-height) + var(--safe-bottom));
+  }
+
+  input, select, textarea,
+  .search-field input,
+  .date-card input,
+  .chat-composer textarea,
+  .adjustment-chat .roaming-composer textarea {
+    font-size: 16px !important;
+  }
+  input, select, textarea { max-width: 100%; }
+  .date-card > *, .date-card input { min-width: 0; }
+  .chat-header {
+    padding-left: calc(12px + var(--safe-left));
+    padding-right: calc(12px + var(--safe-right));
+  }
+  .chat-composer {
+    padding-right: calc(11px + var(--safe-right));
+    padding-left: calc(11px + var(--safe-left));
+  }
+  .chat-composer input,
+  .chat-composer textarea,
+  .roaming-composer textarea { scroll-margin-bottom: calc(100px + var(--safe-bottom)); }
+  #network-result > .button-stack,
+  #bill-analysis > .button-stack,
+  #complaint-success > .button-stack,
+  #roaming-result > .button-stack,
+  #bill-usage-history #usage-history-back { margin-bottom: var(--safe-bottom); }
+}
+
+html.is-standalone body { overflow: auto; }
+html.is-standalone .desktop-stage,
+html.is-standalone .desktop-stage[data-preview="expanded"] { display: block; width: 100%; min-height: var(--app-viewport-height, 100dvh); padding: 0; background: #f6f7f9; }
+html.is-standalone .phone-device,
+html.is-standalone .desktop-stage[data-preview="expanded"] .phone-device { width: 100%; height: var(--app-viewport-height, 100dvh); max-height: none; border: 0; border-radius: 0; box-shadow: none; }
+html.is-standalone .phone-screen,
+html.is-standalone .desktop-stage[data-preview="expanded"] .phone-screen { border-radius: 0; }
+html.is-standalone .phone-notch,
+html.is-standalone .phone-status,
+html.is-standalone .home-indicator,
+html.is-standalone .preview-tools,
+html.is-standalone .desktop-disclaimer { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pwa-install-prompt, .pwa-update-toast { backdrop-filter: none; }
+}

@@ -2,6 +2,11 @@ from datetime import date, timedelta
 
 import pytest
 
+from app.services.gemini_recommender import RecommendationDecision
+from app.services.gemini_requirements_interpreter import (
+    RequirementsInterpretation,
+)
+from app.services.recommendation_values import METRIC_NAMES, canonical_string
 from tests.conftest import login_seeded
 
 
@@ -81,17 +86,70 @@ def test_route_uses_current_user_and_ignores_browser_user_id(client, app):
     )
 
 
-def test_route_calls_gemini_for_initial_and_every_refinement(client, app, monkeypatch):
+def test_route_uses_an_isolated_gemini_conversation_for_each_journey(
+    client,
+    app,
+    monkeypatch,
+):
     calls = []
-    responses = [model_plan("ESS-7D"), model_plan("DP-7D")]
+    responses = [
+        model_plan("DP-7D"),
+        model_plan("DP-7D"),
+        model_plan("DP-7D"),
+        model_plan("ESS-3D", days=3),
+        model_plan("DP-3D", days=3),
+        model_plan("DP-7D"),
+    ]
 
-    def fake_request(context, **_kwargs):
-        calls.append(context)
-        return responses.pop(0)
+    def fake_request(context, **kwargs):
+        calls.append(
+            {
+                "context": context,
+                "previous_interaction_id": kwargs.get(
+                    "previous_interaction_id"
+                ),
+            }
+        )
+        decision = RecommendationDecision.model_validate(responses.pop(0))
+        decision._interaction_id = f"interaction-{len(calls)}"
+        return decision
 
     monkeypatch.setattr(
         "app.services.roaming_recommendation.request_recommendation_decision",
         fake_request,
+    )
+    interpreter_calls = []
+
+    def fake_interpreter(context, **_kwargs):
+        interpreter_calls.append(context)
+        message = context["raw_user_message"]
+        target = next(
+            (
+                value
+                for value in (5, 6, 7)
+                if str(value) in message
+            ),
+            5,
+        )
+        current = dict(context["current_requirements"])
+        current["data_gb"] = canonical_string(target, field="data_gb")
+        return RequirementsInterpretation.model_validate(
+            {
+                "fully_understood": True,
+                "clarification_required": False,
+                "clarification_question": None,
+                "unresolved_fragments": [],
+                "requirements": current,
+                "changed_metrics": ["data_gb"],
+                "preserved_metrics": [
+                    metric for metric in METRIC_NAMES if metric != "data_gb"
+                ],
+            }
+        )
+
+    monkeypatch.setattr(
+        "app.main.routes.request_requirements_interpretation",
+        fake_interpreter,
     )
     app.config["GEMINI_API_KEY"] = "configured-for-test"
     login_seeded(client)
@@ -105,13 +163,96 @@ def test_route_calls_gemini_for_initial_and_every_refinement(client, app, monkey
         "/api/roaming/refine",
         json={
             "current_recommendation_id": initial.json["recommendation_id"],
-            "message": "Give me more data",
+            "message": "I need 5 GB",
         },
     )
     assert refined.status_code == 200
-    assert len(calls) == 2
-    assert len(calls[0]["active_package_catalogue"]) == 42
-    assert calls[1]["latest_user_instruction"] == "Give me more data"
+    refined_again = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": refined.json["recommendation_id"],
+            "message": "I need 6 GB",
+        },
+    )
+    assert refined_again.status_code == 200
+    second_start, second_end = trip(3)
+    second_initial = client.post(
+        "/api/roaming/recommend",
+        json={
+            "destination": "Japan",
+            "start_date": second_start,
+            "end_date": second_end,
+        },
+    )
+    assert second_initial.status_code == 200
+    second_refined = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": second_initial.json[
+                "recommendation_id"
+            ],
+            "message": "I need 5 GB",
+        },
+    )
+    assert second_refined.status_code == 200
+
+    assert len(calls) == 5
+    assert len(calls[0]["context"]["active_package_catalogue"]) == 42
+    assert calls[0]["previous_interaction_id"] is None
+    assert "active_package_catalogue" not in calls[1]["context"]
+    assert calls[1]["context"]["trip_requirements"]["data_gb"] == "5.000000"
+    assert calls[1]["previous_interaction_id"] == "interaction-1"
+    assert "active_package_catalogue" not in calls[2]["context"]
+    assert calls[2]["context"]["trip_requirements"]["data_gb"] == "6.000000"
+    assert calls[2]["previous_interaction_id"] == "interaction-2"
+    assert len(calls[3]["context"]["active_package_catalogue"]) == 42
+    assert calls[3]["previous_interaction_id"] is None
+    assert "active_package_catalogue" not in calls[4]["context"]
+    assert calls[4]["previous_interaction_id"] == "interaction-4"
+    third_initial = client.post(
+        "/api/roaming/recommend",
+        json={
+            "destination": "France",
+            "start_date": start,
+            "end_date": end,
+        },
+    )
+    assert third_initial.status_code == 200
+    assert third_initial.json["recommendation_source"] == "smart_history"
+    assert len(calls) == 5
+    with client.session_transaction() as active_session:
+        assert "roaming_gemini_interaction_id" not in active_session
+
+    third_refined = client.post(
+        "/api/roaming/refine",
+        json={
+            "current_recommendation_id": third_initial.json[
+                "recommendation_id"
+            ],
+            "message": "I need 7 GB",
+        },
+    )
+    assert third_refined.status_code == 200
+    assert len(calls) == 6
+    assert len(calls[5]["context"]["active_package_catalogue"]) == 42
+    assert calls[5]["previous_interaction_id"] is None
+    assert len(interpreter_calls) == 4
+
+    for response in (
+        initial,
+        refined,
+        refined_again,
+        second_initial,
+        second_refined,
+        third_initial,
+        third_refined,
+    ):
+        assert "roaming_gemini_interaction_id" not in response.json
+        assert "previous_interaction_id" not in response.json
+    with client.session_transaction() as active_session:
+        assert active_session["roaming_gemini_interaction_id"] == (
+            "interaction-6"
+        )
 
 
 def test_seeded_users_receive_usage_appropriate_package_families(client):
@@ -140,7 +281,7 @@ def test_seeded_users_receive_usage_appropriate_package_families(client):
     assert any(name.startswith("Voice") for name in families["yusuf@example.test"])
 
 
-def test_omar_three_day_trip_uses_roam_essentials_without_a_buffer(client):
+def test_omar_three_day_trip_selects_from_the_exact_requirements(client):
     login_seeded(client, "omar@example.test")
     start, end = trip(3)
 
@@ -152,14 +293,14 @@ def test_omar_three_day_trip_uses_roam_essentials_without_a_buffer(client):
     assert response.status_code == 200
     analysis = response.json["usage_analysis"]
     assert analysis["requirements"] == analysis["trip_estimate"]
-    assert "buffered_requirements" not in analysis
     assert analysis["requirements"]["data_gb"] == pytest.approx(1.487, abs=0.001)
     assert analysis["requirements"]["data_gb"] < 1.5
-    assert [
-        (item["package_code"], item["quantity"])
-        for item in response.json["selection"]["items"]
-    ] == [("ESS-3D", 1)]
-    assert response.json["selection"]["total_price_aed"] == 35
+    selection = response.json["selection"]
+    assert [(item["package_code"], item["quantity"]) for item in selection["items"]] == [
+        ("ESS-3D", 1)
+    ]
+    assert selection["total_price_aed"] == 35
+    assert selection["total_validity_days"] == 3
 
 
 @pytest.mark.parametrize(

@@ -198,6 +198,74 @@ class RoamingRecommendationHistory(db.Model):
         return json.loads(self.recommendation_json)
 
 
+class SmartRecommendationHistory(db.Model):
+    """System-wide cache of validated package-plan structures."""
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "data_gb",
+            "local_minutes",
+            "international_minutes",
+            "sms",
+            "period_days",
+            "split",
+            "split_signature",
+            name="uq_smart_history_exact_requirement",
+        ),
+        db.CheckConstraint("data_gb >= 0", name="ck_smart_history_data_nonnegative"),
+        db.CheckConstraint(
+            "local_minutes >= 0",
+            name="ck_smart_history_local_nonnegative",
+        ),
+        db.CheckConstraint(
+            "international_minutes >= 0",
+            name="ck_smart_history_international_nonnegative",
+        ),
+        db.CheckConstraint("sms >= 0", name="ck_smart_history_sms_nonnegative"),
+        db.CheckConstraint(
+            "period_days > 0",
+            name="ck_smart_history_period_positive",
+        ),
+        db.CheckConstraint(
+            "(split = 0 AND split_details IS NULL AND split_signature = 'UNSPLIT') "
+            "OR (split = 1 AND split_details IS NOT NULL AND split_signature != 'UNSPLIT')",
+            name="ck_smart_history_split_consistent",
+        ),
+        db.CheckConstraint(
+            "split_details IS NULL OR json_valid(split_details)",
+            name="ck_smart_history_split_json_valid",
+        ),
+        db.CheckConstraint(
+            "json_valid(plan_json)",
+            name="ck_smart_history_plan_json_valid",
+        ),
+        db.CheckConstraint(
+            "hit_count >= 0",
+            name="ck_smart_history_hit_count_nonnegative",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    data_gb = db.Column(db.Numeric(18, 6), nullable=False)
+    local_minutes = db.Column(db.Numeric(18, 6), nullable=False)
+    international_minutes = db.Column(db.Numeric(18, 6), nullable=False)
+    sms = db.Column(db.Numeric(18, 6), nullable=False)
+    period_days = db.Column(db.Integer, nullable=False)
+    split = db.Column(db.Boolean, nullable=False)
+    split_details = db.Column(db.Text, nullable=True)
+    split_signature = db.Column(db.String(64), nullable=False)
+    plan_json = db.Column(db.Text, nullable=False)
+    hit_count = db.Column(db.Integer, default=0, nullable=False)
+    created_at = db.Column(db.DateTime, default=utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=utcnow,
+        onupdate=utcnow,
+        nullable=False,
+    )
+    last_used_at = db.Column(db.DateTime, nullable=True)
+
+
 class ComplaintTicket(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)

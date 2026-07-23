@@ -5,6 +5,7 @@ import pytest
 
 from app.models import User
 from app.services.gemini_recommender import (
+    GeminiConversationUnavailable,
     GeminiRateLimited,
     GeminiUnavailable,
     RecommendationDecision,
@@ -33,7 +34,7 @@ def valid_decision(code="ESS-7D"):
         "reason": "Complete validated coverage.",
         "why_it_fits": ["It covers the full trip."],
         "usage_summary": "Allowances meet the calculated usage.",
-        "modification_summary": None,
+        "modification_summary": "Selected the lowest-priced valid plan.",
         "tradeoff_summary": None,
     }
 
@@ -43,12 +44,17 @@ class FakeInteractions:
         self.output = output
         self.error = error
         self.calls = []
+        self.sequence = 0
 
     def create(self, **kwargs):
         self.calls.append(kwargs)
         if self.error:
             raise self.error
-        return SimpleNamespace(output_text=self.output)
+        self.sequence += 1
+        return SimpleNamespace(
+            id=f"interaction-{self.sequence}",
+            output_text=self.output,
+        )
 
 
 class FakeClient:
@@ -60,110 +66,129 @@ class RateLimitError(Exception):
     pass
 
 
-def test_structured_interactions_request_uses_model_schema_and_high_thinking():
+def test_structured_interactions_request_uses_compact_schema_and_high_thinking():
     client = FakeClient(json.dumps(valid_decision()))
     result = request_recommendation_decision(
         {"destination": "France", "active_package_catalogue": []},
         api_key="configured-for-test",
-        model="gemini-3.5-flash",
+        model="gemini-3.6-flash",
         client=client,
     )
     assert isinstance(result, RecommendationDecision)
     call = client.interactions.calls[0]
-    assert call["model"] == "gemini-3.5-flash"
+    assert call["model"] == "gemini-3.6-flash"
     assert call["generation_config"] == {"thinking_level": "high"}
     assert call["response_format"]["mime_type"] == "application/json"
     assert call["response_format"]["schema"] == RecommendationDecision.model_json_schema()
-    assert call["store"] is False
+    assert call["store"] is True
+    assert "previous_interaction_id" not in call
+    assert result._interaction_id == "interaction-1"
     assert "password" not in call["input"].lower()
+    assert "cheapest valid structural roaming plan" in call["system_instruction"]
+    schema_properties = call["response_format"]["schema"]["properties"]
+    assert set(schema_properties) == {
+        "trip_segments",
+        "package_items",
+        "modification_summary",
+    }
 
 
 def test_each_gemini_api_call_saves_its_request_as_json(tmp_path):
     request_log_dir = tmp_path / "api_request_logs"
     client = FakeClient(json.dumps(valid_decision()))
     calls = (
-        ({"destination": "France"}, {}, "initial"),
+        (
+            {
+                "destination": "France",
+                "active_package_catalogue": [{"package_code": "ESS-7D"}],
+            },
+            {},
+            "initial",
+        ),
         (
             {"destination": "France", "latest_user_instruction": "Give me more data"},
             {},
             "refinement",
         ),
-        (
-            {"destination": "France"},
-            {
-                "invalid_decision": {"package_items": []},
-                "validation_errors": ["Coverage is missing."],
-            },
-            "correction",
-        ),
     )
 
+    previous_interaction_id = None
     for context, extra, _kind in calls:
-        request_recommendation_decision(
+        result = request_recommendation_decision(
             context,
             api_key="configured-for-test",
-            model="gemini-3.5-flash",
+            model="gemini-3.6-flash",
             client=client,
             request_log_dir=request_log_dir,
+            previous_interaction_id=previous_interaction_id,
             **extra,
         )
+        previous_interaction_id = result._interaction_id
 
     files = list(request_log_dir.glob("*.json"))
-    assert len(files) == len(client.interactions.calls) == 3
+    assert len(files) == len(client.interactions.calls) == 2
     saved = {
         payload["request_kind"]: payload
         for payload in (
             json.loads(path.read_text(encoding="utf-8")) for path in files
         )
     }
-    assert set(saved) == {"initial", "refinement", "correction"}
-    assert saved["initial"]["api_method"] == "interactions.create"
-    assert saved["initial"]["request"]["input"]["destination"] == "France"
-    assert saved["refinement"]["request"]["input"]["latest_user_instruction"] == (
+    assert set(saved) == {"planner_initial", "planner_refinement"}
+    initial_log = saved["planner_initial"]
+    refinement_log = saved["planner_refinement"]
+    assert initial_log["api_method"] == "interactions.create"
+    assert initial_log["request"]["input"]["destination"] == "France"
+    assert initial_log["request"]["input"]["active_package_catalogue"] == [
+        {"package_code": "ESS-7D"}
+    ]
+    assert refinement_log["request"]["input"]["latest_user_instruction"] == (
         "Give me more data"
     )
-    assert saved["correction"]["request"]["input"]["CORRECTION_REQUEST"][
-        "validation_errors"
-    ] == ["Coverage is missing."]
-    assert saved["initial"]["request"]["generation_config"] == {
+    assert (
+        "active_package_catalogue"
+        not in refinement_log["request"]["input"]
+    )
+    assert initial_log["request"]["store"] is True
+    assert "previous_interaction_id" not in initial_log["request"]
+    assert refinement_log["request"]["previous_interaction_id"] == (
+        "interaction-1"
+    )
+    assert initial_log["request"]["generation_config"] == {
         "thinking_level": "high"
     }
     assert "configured-for-test" not in json.dumps(saved)
 
 
-def test_correction_request_contains_validation_errors():
-    client = FakeClient(json.dumps(valid_decision()))
-    request_recommendation_decision(
-        {"destination": "France"},
-        api_key="configured-for-test",
-        model="gemini-3.5-flash",
-        client=client,
-        invalid_decision={"package_items": []},
-        validation_errors=["Coverage is missing."],
-    )
-    payload = json.loads(client.interactions.calls[0]["input"])
-    assert payload["CORRECTION_REQUEST"]["validation_errors"] == [
-        "Coverage is missing."
-    ]
+def test_missing_stored_conversation_is_reported_separately():
+    error = RuntimeError("Previous interaction was not found")
+    error.status_code = 404
 
+    with pytest.raises(GeminiConversationUnavailable):
+        request_recommendation_decision(
+            {"latest_user_instruction": "Give me more data"},
+            api_key="configured-for-test",
+            model="gemini-3.6-flash",
+            client=FakeClient(error=error),
+            previous_interaction_id="expired-interaction",
+        )
 
 def test_missing_key_timeout_and_parse_failures_are_safe():
     with pytest.raises(GeminiUnavailable):
         request_recommendation_decision(
-            {}, api_key="", model="gemini-3.5-flash", client=FakeClient("{}")
+            {}, api_key="", model="gemini-3.6-flash", client=FakeClient("{}")
         )
     with pytest.raises(GeminiUnavailable):
         request_recommendation_decision(
             {},
             api_key="configured-for-test",
-            model="gemini-3.5-flash",
+            model="gemini-3.6-flash",
             client=FakeClient(error=TimeoutError("timed out")),
         )
     with pytest.raises(GeminiUnavailable):
         request_recommendation_decision(
             {},
             api_key="configured-for-test",
-            model="gemini-3.5-flash",
+            model="gemini-3.6-flash",
             client=FakeClient("not json"),
         )
 
@@ -177,7 +202,7 @@ def test_rate_limit_starts_cooldown_and_skips_the_next_provider_call():
             request_recommendation_decision(
                 {"destination": "France"},
                 api_key="configured-for-test",
-                model="gemini-3.5-flash",
+                model="gemini-3.6-flash",
                 client=limited,
                 rate_limit_cooldown_seconds=60,
             )
@@ -185,7 +210,7 @@ def test_rate_limit_starts_cooldown_and_skips_the_next_provider_call():
             request_recommendation_decision(
                 {"destination": "France"},
                 api_key="configured-for-test",
-                model="gemini-3.5-flash",
+                model="gemini-3.6-flash",
                 client=healthy,
                 rate_limit_cooldown_seconds=60,
             )
@@ -205,7 +230,7 @@ def test_provider_retry_delay_overrides_the_long_fallback_cooldown():
             request_recommendation_decision(
                 {"destination": "France"},
                 api_key="configured-for-test",
-                model="gemini-3.5-flash",
+                model="gemini-3.6-flash",
                 client=limited,
                 rate_limit_cooldown_seconds=60,
             )
@@ -282,6 +307,8 @@ def test_orchestrator_sends_all_packages_without_personal_contact_details(app, m
     assert result["source"] == "gemini"
     context = captured[0]
     assert len(context["active_package_catalogue"]) == 42
+    assert context["validated_baseline_plan"]["package_items"]
+    assert context["validated_baseline_plan"]["total_price_aed"] > 0
     serialized = json.dumps(context).lower()
     assert len(json.dumps(context, separators=(",", ":"))) < 7500
     assert "raw_monthly_usage" not in context
@@ -316,19 +343,22 @@ def test_orchestrator_excludes_omars_march_spike_from_gemini_requirements(
     assert {
         row["usage_month"] for row in result["usage_analysis"]["outliers_detected"]
     } == {"2026-03-01"}
-    assert context["trip_requirements"]["data_gb"] == pytest.approx(
+    assert float(context["trip_requirements"]["data_gb"]) == pytest.approx(
         3.469, abs=0.001
     )
-    assert "buffer" not in json.dumps(context).lower()
+    assert "selection_requirements" not in context
 
 
-def test_invalid_first_plan_gets_one_correction_retry(app, monkeypatch):
-    responses = [valid_decision("UNKNOWN"), valid_decision("ESS-7D")]
+def test_invalid_plan_uses_fallback_without_a_second_api_call(app, monkeypatch):
     calls = []
 
     def fake_request(_context, **kwargs):
         calls.append(kwargs)
-        return responses.pop(0)
+        decision = RecommendationDecision.model_validate(
+            valid_decision("UNKNOWN")
+        )
+        decision._interaction_id = "invalid-plan-interaction"
+        return decision
 
     monkeypatch.setattr(
         "app.services.roaming_recommendation.request_recommendation_decision",
@@ -336,32 +366,16 @@ def test_invalid_first_plan_gets_one_correction_retry(app, monkeypatch):
     )
     with app.app_context():
         aisha = User.query.filter_by(email="aisha@example.test").one()
+        interaction_state = {}
         result = build_recommendation(
-            aisha, "France", "2030-08-01", "2030-08-07"
+            aisha,
+            "France",
+            "2030-08-01",
+            "2030-08-07",
+            interaction_state=interaction_state,
         )
-    assert result["source"] == "gemini"
-    assert len(calls) == 2
-    assert calls[1]["validation_errors"]
-    assert calls[1]["invalid_decision"]["package_items"][0]["package_code"] == "UNKNOWN"
-
-
-def test_second_invalid_plan_uses_deterministic_fallback(app, monkeypatch):
-    calls = []
-
-    def fake_request(_context, **kwargs):
-        calls.append(kwargs)
-        return valid_decision("UNKNOWN")
-
-    monkeypatch.setattr(
-        "app.services.roaming_recommendation.request_recommendation_decision",
-        fake_request,
-    )
-    with app.app_context():
-        aisha = User.query.filter_by(email="aisha@example.test").one()
-        result = build_recommendation(
-            aisha, "France", "2030-08-01", "2030-08-07"
-        )
-    assert len(calls) == 2
+    assert len(calls) == 1
+    assert interaction_state == {}
     assert result["source"] == "deterministic_fallback"
     assert result["selection"]["total_validity_days"] == 7
 
@@ -405,8 +419,7 @@ def test_repeated_trip_wide_violation_uses_valid_full_trip_fallback(app, monkeyp
             current_recommendation=initial,
         )
 
-    assert len(calls) == 2
-    assert any("throughout" in error for error in calls[1]["validation_errors"])
+    assert len(calls) == 1
     assert result["source"] == "deterministic_fallback"
     assert [
         (item["package_code"], item["coverage_start_day"], item["coverage_end_day"])
@@ -427,12 +440,14 @@ def test_missing_api_key_fallback_does_not_crash(app):
 def test_refinement_calls_gemini_again_and_latest_message_is_highest_priority(
     app, monkeypatch
 ):
-    contexts = []
+    calls = []
     responses = [valid_decision("ESS-7D"), valid_decision("DP-7D")]
 
-    def fake_request(context, **_kwargs):
-        contexts.append(context)
-        return responses.pop(0)
+    def fake_request(context, **kwargs):
+        calls.append((context, kwargs.get("previous_interaction_id")))
+        decision = RecommendationDecision.model_validate(responses.pop(0))
+        decision._interaction_id = f"interaction-{len(calls)}"
+        return decision
 
     monkeypatch.setattr(
         "app.services.roaming_recommendation.request_recommendation_decision",
@@ -440,9 +455,15 @@ def test_refinement_calls_gemini_again_and_latest_message_is_highest_priority(
     )
     with app.app_context():
         aisha = User.query.filter_by(email="aisha@example.test").one()
+        initial_state = {}
         initial = build_recommendation(
-            aisha, "France", "2030-08-01", "2030-08-07"
+            aisha,
+            "France",
+            "2030-08-01",
+            "2030-08-07",
+            interaction_state=initial_state,
         )
+        refinement_state = {}
         refined = build_recommendation(
             aisha,
             "France",
@@ -450,19 +471,83 @@ def test_refinement_calls_gemini_again_and_latest_message_is_highest_priority(
             "2030-08-07",
             latest_message="Give me more data",
             current_recommendation=initial,
-            conversation=[],
+            conversation=[{"role": "user", "content": "private prior chat"}],
+            previous_interaction_id=initial_state["interaction_id"],
+            interaction_state=refinement_state,
         )
-    assert len(contexts) == 2
-    assert contexts[1]["latest_user_instruction"] == "Give me more data"
-    assert contexts[1]["active_constraints"]["minimums"]["data_gb"] == 3.75
-    assert contexts[1]["active_constraints"]["preservation_minimums"] == {
+    assert len(calls) == 2
+    initial_context, initial_previous = calls[0]
+    refinement_context, refinement_previous = calls[1]
+    assert len(initial_context["active_package_catalogue"]) == 42
+    assert initial_previous is None
+    assert refinement_previous == "interaction-1"
+    assert "active_package_catalogue" not in refinement_context
+    assert refinement_context["latest_user_instruction"] == "Give me more data"
+    assert "recent_conversation" not in refinement_context
+    assert "private prior chat" not in json.dumps(refinement_context)
+    assert refinement_context["active_constraints"]["minimums"]["data_gb"] == 3.001
+    assert refinement_context["active_constraints"]["preservation_minimums"] == {
         "local_minutes": initial["selection"]["total_local_minutes"],
         "international_minutes": initial["selection"][
             "total_international_minutes"
         ],
         "sms": initial["selection"]["total_sms"],
     }
+    assert refinement_state["interaction_id"] == "interaction-2"
     assert refined["selection"]["total_data_gb"] >= 3.75
+
+
+def test_refinement_without_a_stored_interaction_bootstraps_with_catalogue(
+    app,
+    monkeypatch,
+):
+    captured = []
+
+    def fake_request(context, **kwargs):
+        captured.append((context, kwargs.get("previous_interaction_id")))
+        decision = RecommendationDecision.model_validate(
+            {
+                "trip_segments": context["validated_baseline_plan"][
+                    "trip_segments"
+                ],
+                "package_items": context["validated_baseline_plan"][
+                    "package_items"
+                ],
+                "modification_summary": "Kept the closest valid plan.",
+            }
+        )
+        decision._interaction_id = "bootstrapped-interaction"
+        return decision
+
+    with app.app_context():
+        aisha = User.query.filter_by(email="aisha@example.test").one()
+        initial = build_recommendation(
+            aisha,
+            "France",
+            "2030-08-01",
+            "2030-08-07",
+        )
+        app.config["GEMINI_API_KEY"] = "configured-for-test"
+        monkeypatch.setattr(
+            "app.services.roaming_recommendation.request_recommendation_decision",
+            fake_request,
+        )
+        interaction_state = {}
+        build_recommendation(
+            aisha,
+            "France",
+            "2030-08-01",
+            "2030-08-07",
+            latest_message="Keep this recommendation",
+            current_recommendation=initial,
+            previous_interaction_id=None,
+            interaction_state=interaction_state,
+        )
+
+    context, previous_interaction_id = captured[0]
+    assert len(context["active_package_catalogue"]) == 42
+    assert previous_interaction_id is None
+    assert interaction_state["interaction_id"] == "bootstrapped-interaction"
 
 
 @pytest.mark.parametrize(

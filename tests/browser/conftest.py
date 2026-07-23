@@ -17,6 +17,11 @@ def live_app_url(tmp_path_factory):
         SQLALCHEMY_DATABASE_URI = f"sqlite:///{database.as_posix()}"
 
     application = create_app(BrowserConfig)
+
+    @application.get("/_test/origin-unavailable")
+    def origin_unavailable():
+        return "Origin unavailable", 503
+
     server = make_server("127.0.0.1", 0, application, threaded=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
