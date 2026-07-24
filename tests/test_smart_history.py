@@ -716,7 +716,7 @@ def test_non_numeric_preferences_are_never_history_eligible():
     assert is_history_eligible({**base, "minimum_validity_days": 14}) is False
     assert is_history_eligible({**base, "affected_metrics": []}) is False
     for message in (
-        "I need 5 GB but do not use Roam Like Home",
+        "I need 5 GB but do not use Roam with Balance",
         "I need 5 GB and prefer one package",
         "I need 5 GB on a premium plan",
     ):
@@ -726,7 +726,7 @@ def test_non_numeric_preferences_are_never_history_eligible():
 @pytest.mark.parametrize(
     "message",
     (
-        "I need 5 GB but do not use Roam Like Home",
+        "I need 5 GB but do not use Roam with Balance",
         "I need 5 GB and prefer one package",
         "I need 5 GB on a premium plan",
     ),

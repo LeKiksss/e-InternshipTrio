@@ -229,7 +229,7 @@ def is_history_eligible(parsed_requirements, *, initial=False):
         r"\b(?:prefer|preference|premium)\b"
         r"|\b(?:one|single)\s+package\b"
         r"|\b(?:do not|don't|avoid|exclude|without)\b[^.?!]{0,40}"
-        r"\b(?:package|plan|roam like home|roam essentials|data first|data plus|"
+        r"\b(?:package|plan|roam with balance|roam essentials|data first|data plus|"
         r"voice first|voice plus|roam premium)\b",
         latest_message,
     ):

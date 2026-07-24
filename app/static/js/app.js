@@ -64,11 +64,12 @@
     const className = direction === "back" ? "view-enter-back" : "view-enter-forward";
     clearTimeout(element._viewTransitionTimer);
     element.classList.remove("view-enter-forward", "view-enter-back");
+    element.dataset.transitionDirection = direction === "back" ? "back" : "forward";
     void element.offsetWidth;
     element.classList.add(className);
     element._viewTransitionTimer = setTimeout(() => {
       element.classList.remove("view-enter-forward", "view-enter-back");
-    }, 260);
+    }, 460);
   }
 
   window.App = { $, $$, delay, api, toast, openSheet, closeSheet, confirmAction, animateView };

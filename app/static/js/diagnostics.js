@@ -7,6 +7,7 @@
     let runGeneration = 0;
     const controller = window.WorkflowState.create({
       name: "network",
+      viewOrder: ["landing", "permission", "testing", "result"],
       initialState: { locationChoice: null, lastResult: null },
       render(view) {
         const landing = view === "landing" || view === "permission";
@@ -15,6 +16,9 @@
         runButton.hidden = !landing;
         if (controller.state.lastResult) renderLatest(controller.state.lastResult);
         $("#app-scroll").scrollTop = 0;
+        if (view === "testing") return $("#speed-test-card");
+        if (view === "result") return $("#network-result");
+        return view === "landing" ? document.querySelector('[data-panel="network"]') : null;
       },
     });
     await controller.restore();

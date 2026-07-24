@@ -31,7 +31,11 @@ def assert_clean_visible_copy(page):
 
 
 def assert_no_horizontal_overflow(page):
-    page.wait_for_timeout(320)
+    page.wait_for_function(
+        """() => !document.querySelector(
+          ".view-enter-forward, .view-enter-back"
+        )"""
+    )
     audit = page.locator("#app-scroll").evaluate(
         """(element) => {
           const root = element.getBoundingClientRect();
@@ -342,10 +346,13 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
 
     expect(page.locator('[data-testid="current-usage-recommendation"]')).to_be_visible()
     assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
-    expect(page.locator(".recommender-identity strong")).to_have_text("Roam Like Home")
+    expect(page.locator(".recommender-identity")).to_have_count(0)
+    expect(page.locator("#usage-package-explanation")).to_have_count(0)
     assert_clean_visible_copy(page)
     assert_no_horizontal_overflow(page)
     expect(page.locator("#usage-plan-items .plan-item")).to_have_count(1)
+    expect(page.locator("#usage-plan-items .family-pill")).to_have_count(0)
+    expect(page.locator("#usage-plan-items .plan-item-copy > small")).to_have_count(0)
     expect(page.locator('#usage-plan-items [data-package-code="ESS-7D"]')).to_be_visible()
 
     page.locator('[data-edit-roaming="2"]').first.click()
@@ -405,15 +412,32 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     page.locator("#roaming-adjustment").fill(
         "For the first week I will have Wi-Fi and need light usage, and I need heavy data in the second week."
     )
+    page.locator("#app-scroll").evaluate("(node) => { node.scrollTop = node.scrollHeight; }")
+    assert page.locator("#app-scroll").evaluate(
+        "(node) => node.scrollTop > 0"
+    )
     expect(send_adjustment).to_be_enabled()
     expect(send_adjustment).to_have_css("background-color", "rgb(230, 0, 0)")
     send_adjustment.click()
     expect(send_adjustment).to_be_disabled()
     expect(page.locator("#usage-segment-timeline")).to_be_visible()
-    expect(page.locator("#roaming-chat-messages .chat-message")).to_have_count(4)
+    expect(page.locator("#roaming-chat-messages .chat-message.user")).to_have_count(2)
+    expect(page.get_by_text("Reviewing that adjustment…", exact=True)).to_have_count(0)
     expect(page.locator("#usage-segment-timeline .segment-card")).to_have_count(2)
     expect(page.locator("#usage-plan-items .plan-item")).not_to_have_count(0)
     expect(page.locator('[data-testid="current-usage-recommendation"]')).to_have_count(1)
+    page.wait_for_function(
+        """() => {
+          const scroll = document.querySelector("#app-scroll");
+          const card = document.querySelector('[data-testid="current-usage-recommendation"]');
+          return scroll && card
+            && Math.abs(card.getBoundingClientRect().top - scroll.getBoundingClientRect().top) <= 12;
+        }"""
+    )
+    expect(page.get_by_text(
+        "I updated the package plan using the available package catalogue.",
+        exact=True,
+    )).to_have_count(0)
     assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
 
     page.locator("#continue-roaming-plan").click()
@@ -422,6 +446,9 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     assert_no_horizontal_overflow(page)
     assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
     expect(page.locator("#final-plan-items .plan-item")).not_to_have_count(0)
+    expect(page.locator("#final-plan-items .family-pill")).to_have_count(0)
+    expect(page.locator("#final-plan-items .plan-item-copy > small")).to_have_count(0)
+    expect(page.get_by_text("ONE CLEAR RECOMMENDATION", exact=True)).to_have_count(0)
     expect(page.locator("#final-segment-timeline .segment-card")).to_have_count(2)
     expect(page.locator('[data-testid="final-roaming-recommendation"] .fit-explanation')).to_have_count(0)
     expect(page.locator("#package-why")).to_have_count(0)
@@ -438,7 +465,7 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     readable_text = page.locator(
         ".package-card small, .package-detail, .carrier-note .overline, "
         ".carrier-note > p, .carrier-acknowledgement, .activation-card .overline, "
-        ".activation-lock-message, .family-pill, .plan-item p, .plan-item small, "
+        ".activation-lock-message, .plan-item p, "
         ".plan-allowances span, .activation-step strong, .activation-step small, "
         ".activation-step code"
     ).evaluate_all(

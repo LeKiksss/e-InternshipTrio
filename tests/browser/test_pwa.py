@@ -32,6 +32,40 @@ def iphone_context(browser, *, standalone=False, viewport=None):
     return context
 
 
+def transition_details(locator):
+    return locator.evaluate(
+        """(element) => {
+          const animation = element.getAnimations().find(
+            (item) => item.animationName?.startsWith("viewEnter")
+          );
+          const firstTransform = animation?.effect.getKeyframes()?.[0]?.transform || "none";
+          const startX = firstTransform === "none" ? 0 : new DOMMatrix(firstTransform).m41;
+          const style = getComputedStyle(element);
+          return {
+            animationName: style.animationName,
+            direction: element.dataset.transitionDirection,
+            durationMs: parseFloat(style.animationDuration) * 1000,
+            easing: style.animationTimingFunction,
+            startX,
+          };
+        }"""
+    )
+
+
+def assert_transition(locator, direction):
+    details = transition_details(locator)
+    assert details["animationName"] == (
+        "viewEnterBack" if direction == "back" else "viewEnterForward"
+    )
+    assert details["direction"] == direction
+    assert 340 <= details["durationMs"] <= 400
+    assert details["easing"] == "cubic-bezier(0.22, 1, 0.36, 1)"
+    if direction == "forward":
+        assert details["startX"] < -20, details
+    else:
+        assert details["startX"] > 20, details
+
+
 def test_iphone_safari_install_help_layout_and_dismissal(browser, live_app_url):
     context = iphone_context(browser)
     page = context.new_page()
@@ -285,36 +319,97 @@ def test_iphone_keyboard_keeps_shell_stable_and_positions_roaming_chat(
     context.close()
 
 
-def test_screen_and_roaming_steps_use_directional_transitions(browser, live_app_url):
+def test_all_screens_and_workflows_use_fluid_directional_transitions(
+    browser, live_app_url
+):
     context = iphone_context(browser)
     page = context.new_page()
     login_demo(page, live_app_url)
+    page.evaluate(
+        """async () => {
+          await Promise.all(
+            ["network", "bill", "complaints", "roaming"].map(
+              (name) => window.WorkflowState.get(name).reset()
+            )
+          );
+        }"""
+    )
 
     page.evaluate("window.App.navigate('roaming')")
-    assert page.locator('.screen[data-screen="roaming"]').evaluate(
-        "(element) => element.classList.contains('view-enter-forward')"
+    assert_transition(page.locator('.screen[data-screen="roaming"]'), "forward")
+    horizontal_stability = page.locator("#app-scroll").evaluate(
+        """(element) => {
+          element.scrollLeft = 100;
+          return {
+            overflowX: getComputedStyle(element).overflowX,
+            scrollLeft: element.scrollLeft,
+          };
+        }"""
     )
-    page.wait_for_timeout(280)
+    assert horizontal_stability["overflowX"] in {"clip", "hidden"}
+    assert horizontal_stability["scrollLeft"] == 0
+    page.wait_for_timeout(420)
     page.evaluate("window.App.navigate('home')")
-    assert page.locator('.screen[data-screen="home"]').evaluate(
-        "(element) => element.classList.contains('view-enter-back')"
-    )
+    assert_transition(page.locator('.screen[data-screen="home"]'), "back")
 
-    page.wait_for_timeout(280)
+    page.wait_for_timeout(420)
+    page.evaluate("window.App.navigate('network-bill')")
+    assert_transition(page.locator('.screen[data-screen="network-bill"]'), "forward")
+
+    page.locator('[data-segment="bill"]').click()
+    assert_transition(page.locator('[data-panel="bill"]'), "forward")
+    page.locator('[data-segment="network"]').click()
+    assert_transition(page.locator('[data-panel="network"]'), "back")
+
+    page.evaluate(
+        "window.WorkflowState.get('network').go('testing', {save: false})"
+    )
+    assert_transition(page.locator("#speed-test-card"), "forward")
+    page.evaluate(
+        "window.WorkflowState.get('network').go('landing', {save: false})"
+    )
+    assert_transition(page.locator('[data-panel="network"]'), "back")
+
+    page.locator('[data-segment="bill"]').click()
+    page.evaluate("window.WorkflowState.get('bill').go('fields', {save: false})")
+    assert_transition(page.locator("#bill-fields"), "forward")
+    page.evaluate("window.WorkflowState.get('bill').go('landing', {save: false})")
+    assert_transition(page.locator("#bill-input-choice"), "back")
+
+    page.evaluate("window.App.navigate('complaints')")
+    page.evaluate(
+        "window.WorkflowState.get('complaints').go('form', {save: false})"
+    )
+    assert_transition(page.locator("#complaint-form-section"), "forward")
+    page.evaluate(
+        "window.WorkflowState.get('complaints').go('landing', {save: false})"
+    )
+    assert_transition(page.locator("#complaint-landing"), "back")
+
     page.evaluate("window.App.navigate('roaming')")
     page.locator("#start-roaming").click()
     step_one = page.locator('[data-roaming-step="1"]')
-    assert step_one.evaluate(
-        "(element) => element.classList.contains('view-enter-forward')"
-    )
+    assert_transition(step_one, "forward")
     page.locator('[data-country="United Kingdom"]').click()
     page.locator("#destination-next").click()
     step_two = page.locator('[data-roaming-step="2"]')
-    assert step_two.evaluate(
-        "(element) => element.classList.contains('view-enter-forward')"
-    )
+    assert_transition(step_two, "forward")
     step_two.locator('[data-edit-roaming="1"]').first.click()
-    assert step_one.evaluate(
-        "(element) => element.classList.contains('view-enter-back')"
+    assert_transition(step_one, "back")
+    context.close()
+
+
+def test_reduced_motion_skips_page_transitions(browser, live_app_url):
+    context = iphone_context(browser)
+    page = context.new_page()
+    page.emulate_media(reduced_motion="reduce")
+    login_demo(page, live_app_url)
+
+    page.evaluate("window.App.navigate('roaming')")
+    roaming = page.locator('.screen[data-screen="roaming"]')
+    assert roaming.evaluate(
+        """(element) => !element.classList.contains("view-enter-forward")
+          && !element.classList.contains("view-enter-back")
+          && element.getAnimations().length === 0"""
     )
     context.close()

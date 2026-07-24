@@ -2,7 +2,7 @@
   "use strict";
   document.addEventListener("DOMContentLoaded", async () => {
     if (!window.App || !window.WorkflowState || !document.querySelector("#roaming-planner")) return;
-    const { $, $$, api, delay, toast, confirmAction, animateView } = window.App;
+    const { $, $$, api, delay, toast, confirmAction } = window.App;
     const roamingScreen = document.querySelector('.screen[data-screen="roaming"]');
     const appScroll = $("#app-scroll");
     const intro = $("#roaming-intro"), planner = $("#roaming-planner"), loading = $("#roaming-loading"), result = $("#roaming-result"), empty = $("#roaming-empty");
@@ -54,7 +54,7 @@
               : view === "empty"
                 ? empty
                 : document.querySelector(`[data-roaming-step="${view.replace("step", "")}"]`);
-        animateView(transitionTarget, direction);
+        return transitionTarget;
       },
     });
 
@@ -119,7 +119,7 @@
     function planItemHTML(item, { final = false } = {}) {
       const quantity = item.quantity > 1 ? ` × ${item.quantity}` : "";
       const codeCopy = final ? `<span class="plan-code">${escapeHTML(item.activation_code)}</span>` : "";
-      return `<article class="plan-item" data-package-code="${escapeHTML(item.package_code)}"><div class="plan-order">${item.activation_order}</div><div class="plan-item-copy"><div><h3>${escapeHTML(item.package_name)}${quantity}</h3><span class="family-pill">${escapeHTML(item.family)}</span></div><p>Days ${item.coverage_start_day}–${item.coverage_end_day} · AED ${Number(item.price_per_package_aed).toFixed(0)} each</p><small>${escapeHTML(item.reason_for_item)}</small><div class="plan-allowances"><span>${Number(item.data_gb_per_package).toFixed(1)} GB</span><span>${item.local_minutes_per_package} local min</span><span>${item.international_minutes_per_package} intl min</span><span>${item.sms_per_package} SMS</span></div>${codeCopy}</div></article>`;
+      return `<article class="plan-item" data-package-code="${escapeHTML(item.package_code)}"><div class="plan-order">${item.activation_order}</div><div class="plan-item-copy"><div><h3>${escapeHTML(item.package_name)}${quantity}</h3></div><p>Days ${item.coverage_start_day}–${item.coverage_end_day} · AED ${Number(item.price_per_package_aed).toFixed(0)} each</p><div class="plan-allowances"><span>${Number(item.data_gb_per_package).toFixed(1)} GB</span><span>${item.local_minutes_per_package} local min</span><span>${item.international_minutes_per_package} intl min</span><span>${item.sms_per_package} SMS</span></div>${codeCopy}</div></article>`;
     }
 
     function renderItems(container, recommendation, options = {}) {
@@ -144,7 +144,6 @@
     }
     function renderRecommendation() {
       const recommendation = controller.state.recommendation; if (!recommendation) return;
-      $("#usage-package-explanation").textContent = recommendation.modification_summary || recommendation.tradeoff_summary || recommendation.reason;
       $("#usage-package-destination").textContent = recommendation.destination;
       $("#usage-package-duration").textContent = recommendation.trip.trip_days;
       renderItems($("#usage-plan-items"), recommendation);
@@ -222,6 +221,14 @@
     }
     function formatDate(value) { if (!value) return ""; return new Date(`${value}T12:00:00`).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" }); }
     function escapeHTML(value) { const node = document.createElement("div"); node.textContent = value ?? ""; return node.innerHTML; }
+    function scrollToUpdatedRecommendation() {
+      const card = $('[data-testid="current-usage-recommendation"]');
+      if (!card) return;
+      requestAnimationFrame(() => card.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      }));
+    }
 
     async function submitAdjustment(text) {
       const value = (text || $("#roaming-adjustment").value).trim();
@@ -238,9 +245,12 @@
           return;
         }
         const recommendation = cleanRecommendation(response);
-        const updatedChat = [...controller.state.chat.slice(0, -1), { who: "assistant", text: recommendation.chat_message || recommendation.modification_summary || recommendation.tradeoff_summary || recommendation.reason }];
+        const assistantMessage = recommendation.chat_message?.trim();
+        const updatedChat = assistantMessage
+          ? [...controller.state.chat.slice(0, -1), { who: "assistant", text: assistantMessage }]
+          : controller.state.chat.slice(0, -1);
         controller.update({ recommendation, recommendationId: recommendation.recommendation_id, chat: updatedChat, savedId: null, completed: false, carrierAcknowledged: false });
-        renderRecommendation(); renderChat(); toast(response.history_action ? "Recommendation restored." : "Recommendation reviewed.");
+        renderRecommendation(); renderChat(); scrollToUpdatedRecommendation(); toast(response.history_action ? "Recommendation restored." : "Recommendation reviewed.");
       } catch (error) {
         controller.update({ chat: [...controller.state.chat.slice(0, -1), { who: "assistant", text: error.message }] }, false); renderChat(); toast(error.message, "error");
       }

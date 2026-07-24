@@ -27,6 +27,5 @@
 .strength-track span { display: block; width: 0; height: 100%; background: #c62828; border-radius: inherit; transition: width .2s, background .2s; }
 .strength-label { margin: 6px 0 0; color: #7b7b83; font-size: 10.5px; line-height: 1.4; }
 .terms-label { align-items: flex-start !important; margin: 3px 0 15px; line-height: 1.4; }
-.page-enter { animation: authEnter .45s cubic-bezier(.2,.8,.2,1) both; }
-@keyframes authEnter { from { opacity: 0; transform: translateY(12px); } }
-
+.page-enter { animation: authEnter .5s var(--page-motion-ease) both; }
+@keyframes authEnter { from { opacity: 0; transform: translateY(16px) scale(.994); } }

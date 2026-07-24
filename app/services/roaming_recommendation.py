@@ -441,7 +441,7 @@ def _refinement_chat_message(
             "valid match, so I kept it unchanged."
         )
     elif plan.get("source") == "deterministic_fallback":
-        message = "I updated the package plan using the available package catalogue."
+        message = plan.get("tradeoff_summary") or ""
     else:
         message = plan.get("modification_summary") or (
             "I updated the package plan to reflect your latest request."

@@ -7,6 +7,7 @@
     const defaultDue = () => { const value = new Date(); value.setDate(value.getDate() + 5); return value.toISOString().slice(0, 10); };
     const controller = window.WorkflowState.create({
       name: "bill",
+      viewOrder: ["landing", "upload", "parsing", "fields", "analysis", "usage"],
       initialState: {
         mode: null, filename: null, previousView: "landing", analysis: null,
         values: { total_amount: "468", due_date: defaultDue(), data_charges: "240", call_charges: "72", roaming_charges: "96", addon_charges: "60" },
@@ -28,6 +29,14 @@
         populateForm(state.values);
         if (state.analysis) renderAnalysis(state.analysis.bill, state.analysis.result);
         $("#app-scroll").scrollTop = 0;
+        return {
+          landing: choice,
+          upload,
+          parsing: upload,
+          fields,
+          analysis,
+          usage: usageHistory,
+        }[view] || choice;
       },
     });
     await controller.restore();

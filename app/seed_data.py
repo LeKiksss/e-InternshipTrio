@@ -93,7 +93,7 @@ PACKAGE_CATALOGUE = [
         ),
     ),
     *_family_rows(
-        "Roam Like Home",
+        "Roam with Balance",
         "BALANCED",
         "RLH",
         12,

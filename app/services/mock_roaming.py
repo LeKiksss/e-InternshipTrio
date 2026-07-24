@@ -7,7 +7,7 @@ MONTHLY_USAGE = {
     "international_minutes": 180,
     "sms": 60,
 }
-RECOMMENDER_NAME = "Roam Like Home"
+RECOMMENDER_NAME = "Roam with Balance"
 
 
 def calculate_trip_days(start_date, end_date, today=None):

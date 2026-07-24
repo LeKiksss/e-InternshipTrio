@@ -39,9 +39,22 @@
       button.classList.remove("unread");
       navigate(button.dataset.notificationNav, button.dataset.targetSegment);
     }));
+    const segmentOrder = ["network", "bill"];
     $$("[data-segment]").forEach((button) => button.addEventListener("click", () => {
+      const previous = $(".segmented [data-segment].active")?.dataset.segment;
+      const next = button.dataset.segment;
       $$("[data-segment]").forEach((item) => item.classList.toggle("active", item === button));
-      $$("[data-panel]").forEach((panel) => { const active = panel.dataset.panel === button.dataset.segment; panel.classList.toggle("active", active); panel.hidden = !active; });
+      let incoming = null;
+      $$("[data-panel]").forEach((panel) => {
+        const active = panel.dataset.panel === next;
+        panel.classList.toggle("active", active);
+        panel.hidden = !active;
+        if (active) incoming = panel;
+      });
+      if (previous && previous !== next) {
+        const direction = segmentOrder.indexOf(next) > segmentOrder.indexOf(previous) ? "forward" : "back";
+        animateView(incoming, direction);
+      }
     }));
     window.addEventListener("popstate", (event) => {
       if (event.state?.workflow) return;

@@ -11,7 +11,12 @@
       this.state = clone(initialState);
       this.view = initialView;
       this.initialView = initialView;
-      this.render = render;
+      this.renderView = render;
+      this.render = (view, state, meta = {}) => {
+        const transitionTarget = this.renderView(view, state, meta);
+        window.App?.animateView?.(transitionTarget, meta.direction);
+        return transitionTarget;
+      };
       this.serializeState = serializeState;
       this.viewOrder = viewOrder;
       this.stack = [initialView];

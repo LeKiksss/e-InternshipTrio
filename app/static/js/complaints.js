@@ -18,15 +18,20 @@
     };
     const controller = window.WorkflowState.create({
       name: "complaints",
+      viewOrder: ["landing", "chat", "form", "diagnosis", "success"],
       initialState,
       render(view, state) {
-        [landing, chat, formSection, diagnosis, success].forEach((section) => { section.hidden = section.id !== ({ landing: "complaint-landing", chat: "complaint-chat", form: "complaint-form-section", diagnosis: "diagnosis-view", success: "complaint-success" }[view] || "complaint-landing"); });
+        const sections = { landing, chat, form: formSection, diagnosis, success };
+        [landing, chat, formSection, diagnosis, success].forEach((section) => {
+          section.hidden = section !== (sections[view] || landing);
+        });
         if (view === "chat") renderChat();
         if (view === "form") populateForm();
         if (view === "diagnosis") populateDiagnosis();
         if (view === "success" && state.latestTicket) $("#success-ticket-number").textContent = state.latestTicket.ticket_number;
         renderAttachment();
         $("#app-scroll").scrollTop = 0;
+        return sections[view] || landing;
       },
     });
     await controller.restore();
