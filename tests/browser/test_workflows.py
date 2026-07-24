@@ -413,9 +413,10 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
         "For the first week I will have Wi-Fi and need light usage, and I need heavy data in the second week."
     )
     page.locator("#app-scroll").evaluate("(node) => { node.scrollTop = node.scrollHeight; }")
-    assert page.locator("#app-scroll").evaluate(
-        "(node) => node.scrollTop > 0"
+    scroll_position_before_refinement = page.locator("#app-scroll").evaluate(
+        "(node) => node.scrollTop"
     )
+    assert scroll_position_before_refinement > 0
     expect(send_adjustment).to_be_enabled()
     expect(send_adjustment).to_have_css("background-color", "rgb(230, 0, 0)")
     send_adjustment.click()
@@ -427,12 +428,19 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#usage-plan-items .plan-item")).not_to_have_count(0)
     expect(page.locator('[data-testid="current-usage-recommendation"]')).to_have_count(1)
     page.wait_for_function(
-        """() => {
+        """(scrollPositionBeforeRefinement) => {
           const scroll = document.querySelector("#app-scroll");
           const card = document.querySelector('[data-testid="current-usage-recommendation"]');
-          return scroll && card
-            && Math.abs(card.getBoundingClientRect().top - scroll.getBoundingClientRect().top) <= 12;
-        }"""
+          if (!scroll || !card) return false;
+          const scrollBounds = scroll.getBoundingClientRect();
+          const cardBounds = card.getBoundingClientRect();
+          const topRegionLimit = scrollBounds.top + Math.min(96, scrollBounds.height * 0.2);
+          return scroll.scrollTop < scrollPositionBeforeRefinement
+            && cardBounds.top >= scrollBounds.top - 10
+            && cardBounds.top <= topRegionLimit
+            && cardBounds.bottom > scrollBounds.top + 80;
+        }""",
+        arg=scroll_position_before_refinement,
     )
     expect(page.get_by_text(
         "I updated the package plan using the available package catalogue.",

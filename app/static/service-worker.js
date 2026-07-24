@@ -1,7 +1,7 @@
 "use strict";
 
 // Increment this value whenever a tracked frontend asset changes.
-const CACHE_VERSION = "v10";
+const CACHE_VERSION = "v11";
 const CACHE_PREFIX = "ecare-static-";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline";

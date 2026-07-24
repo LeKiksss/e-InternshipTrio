@@ -223,11 +223,16 @@
     function escapeHTML(value) { const node = document.createElement("div"); node.textContent = value ?? ""; return node.innerHTML; }
     function scrollToUpdatedRecommendation() {
       const card = $('[data-testid="current-usage-recommendation"]');
-      if (!card) return;
-      requestAnimationFrame(() => card.scrollIntoView({
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-        block: "start",
-      }));
+      if (!card || !appScroll) return;
+      requestAnimationFrame(() => {
+        const scrollBounds = appScroll.getBoundingClientRect();
+        const cardBounds = card.getBoundingClientRect();
+        const target = appScroll.scrollTop + cardBounds.top - scrollBounds.top - 8;
+        appScroll.scrollTo({
+          top: Math.max(0, target),
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        });
+      });
     }
 
     async function submitAdjustment(text) {
