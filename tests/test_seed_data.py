@@ -96,6 +96,7 @@ def test_exact_seed_counts_credentials_and_hashes(app):
     with app.app_context():
         users = User.query.filter(User.email.in_(SEEDED_EMAILS)).all()
         assert len(users) == 4
+        assert User.query.count() == 4
         assert UserMonthlyUsage.query.filter(
             UserMonthlyUsage.user_id.in_([user.id for user in users])
         ).count() == 24

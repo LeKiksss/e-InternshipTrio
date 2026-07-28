@@ -1,12 +1,12 @@
 # e& Customer Service UI
 
-A portable Flask application that presents customer-service workflows in a polished, mobile-first interface. It runs locally in a virtual phone frame on desktop and switches to a full-screen responsive layout on smaller devices.
+A portable Flask application that presents customer-service workflows in a polished, mobile-first interface. It runs locally in a virtual phone frame on desktop, offers an expanded desktop preview without losing the preview controls, and switches to a stable full-screen layout on smaller devices.
 
 The repository includes working authentication, a local SQLite data layer, Network & Bill Intelligence, Complaint Intelligence, Profile management, and a data-driven Roaming Recommender. The roaming workflow combines deterministic Python analysis with optional Gemini reasoning and strict backend validation.
 
 ## How it was built
 
-The application uses a Flask application factory with separate authentication and application blueprints. Jinja renders the page shell, while modular vanilla JavaScript controls navigation, loading states, workflow restoration, chat refinements, and session-only saved recommendations. Custom CSS provides the design system, phone frame, responsive layouts, and animation.
+The application uses a Flask application factory with separate authentication and application blueprints. Jinja renders the page shell, while modular vanilla JavaScript controls navigation, loading states, workflow restoration, chat refinements, and session-only saved recommendations. A shared workflow-state controller gives multi-screen journeys consistent forward/back behavior. Custom CSS provides the design system, phone frame, responsive layouts, readable type scale, and directional motion; mobile viewport handling keeps the interface stable when the iPhone keyboard opens.
 
 SQLAlchemy owns all persistent records. The application creates `instance/prototype.db` automatically, performs an idempotent SQLite schema upgrade, and applies repeatable seed definitions at startup. Passwords are hashed with Argon2.
 
@@ -42,8 +42,8 @@ Authenticated user
 | Authentication | Flask-Login, Flask-WTF, Argon2 | Protected routes, CSRF protection, sessions, and password hashing |
 | Recommendation reasoning | Google Gen AI SDK, Pydantic | Stateless Gemini 3.5 Flash-Lite requirements interpretation and stateful Gemini 3.6 Flash package planning |
 | Frontend | Jinja2, vanilla JavaScript | Rendered shell, workflow state, API integration, and interactions |
-| Styling | Custom CSS and inline SVG | Responsive phone presentation, design tokens, states, and motion |
-| PWA | Web App Manifest, service worker | iPhone Home Screen installation, standalone layout, safe static caching, and offline fallback |
+| Styling | Custom CSS and inline SVG | Responsive phone presentation, design tokens, readable sizing, safe areas, and directional motion |
+| PWA | Web App Manifest, service worker | iPhone Home Screen installation, stable standalone viewport, safe static caching, updates, and offline fallback |
 | Public access | Waitress, Cloudflare Quick Tunnel | Loopback-only WSGI serving and temporary HTTPS access from an iPhone |
 | Testing | Pytest, Playwright | Unit, integration, security, API, and browser journeys |
 
@@ -56,21 +56,61 @@ Python 3.11 and newer are supported. Python 3.14.2 is suitable; the GitHub Actio
 | Authentication | Registration, duplicate checks, login, logout, remembered sessions, Argon2 hashes, CSRF | Password-recovery delivery does not send email or SMS |
 | Database | Automatic creation, safe additive upgrade, idempotent seed data, persistent customer activity | Each clone has its own ignored local SQLite file |
 | Network | Diagnostic workflow, results, local history, coverage layers, location choice | Measurements and map layers use deterministic local values |
-| Bills | Upload/manual journeys, draft restoration, editable fields, charts, anomalies, plan review | Files are not sent to OCR or billing systems |
+| Bills | Upload/manual journeys, draft restoration, editable fields, charts, anomalies, plan review, and six-month usage history | Files are not sent to OCR or billing systems |
 | Complaints | Chat and form paths, summary, database ticket creation, tracking, notes, closure | No external CRM or human-agent system is connected |
-| Roaming | Usage analysis, 42-package catalogue, shared exact-match Smart History, Gemini reasoning, deterministic fallback, plan sequences, refinements, session saves | Package activation and dialer actions do not change a live account |
+| Roaming | Four-step mobile journey, usage analysis, 42-package catalogue, shared exact-match Smart History, Gemini reasoning, deterministic fallback, plan sequences, refinements, and session saves | Package activation and dialer actions do not change a live account |
 | Profile | Persisted profile and preference edits, links to account activity | Email remains read-only in this application |
-| iPhone installation | Manifest, opaque icons, standalone presentation, safe areas, update prompt, and offline status page | The Windows server and HTTPS tunnel must remain reachable |
+| iPhone installation | Manifest, branded Home Screen icon, zoom-resistant standalone presentation, safe areas, keyboard stability, update prompt, and offline status page | The Windows server and HTTPS tunnel must remain reachable |
 
 Gemini is the only optional external service. Initial Smart History hits use no model. On an initial miss, the planner receives exact trip requirements and a compact active package catalogue. Each actionable chat message goes first to the stateless interpreter with the raw message, complete current requirements, current package allowances, trip context, and any pending clarification. Requests such as “more minutes” ask only whether the user means local or international; after that answer, Python converts “more” into the smallest value above the current package allowance without asking for an exact number. A planner miss receives only the interpreter's exact structured result, never the raw chat message. Neither model receives user IDs, raw usage history, email, phone number, password, password hash, cookies, or authentication tokens.
 
 ## Main product areas
 
 - **Home** — three equally prominent service widgets, account snapshot, alerts, notifications, help, and reviewable UI states.
-- **Network & Bill** — network diagnostics and history, coverage visualization, bill upload/manual entry, charge analysis, anomalies, and plan review.
+- **Network & Bill** — network diagnostics and history, coverage visualization, bill upload/manual entry, charge analysis, anomalies, plan review, and a six-card Usage History view for the latest six months.
 - **Complaints** — guided chat, structured form, attachment state, generated summary, ticket submission, ticket timeline, notes, and history.
-- **Roaming** — searchable destinations, date validation, automatic usage-based recommendation, natural-language adjustments, package sequences, temporal segments, activation order, and saved plans.
+- **Roaming** — a four-step recommender with prefix-searchable destinations, date validation, automatic usage-based planning, natural-language adjustments, package sequences, temporal segments, protected activation controls, and saved plans.
 - **Profile** — customer details, masked phone number, notification preferences, contact preference, activity links, help, and logout.
+
+## Roaming Recommender experience
+
+The product entry point is consistently named **Roaming Recommender**. **Roam with Balance** is one package family inside the catalogue, not the name of the recommender. Its legacy `RLH-*` package codes remain stable so existing database rows and saved structural plans do not need a destructive rename.
+
+### Customer journey and design rationale
+
+| Stage | Current experience | Why it is designed this way |
+|---|---|---|
+| Landing | A locally bundled travel image keeps its original `1150:560` aspect ratio and resizes without cropping. The page has one clear **Start planning** action plus recent and session-saved recommendations when available. | The visual establishes travel context immediately, while a single primary action avoids competing choices. Local delivery keeps the page independent of image CDNs. |
+| Step 1 — Destination | Countries are grouped A–Z, displayed one country per row, and filtered by the beginning of the country name. Searching `B` therefore cannot surface Saudi Arabia merely because another field contains that letter. Only the country list scrolls; the search, progress context, and **Continue** button remain visible. | One full-width country per line improves scanning and tap accuracy. Prefix matching makes results predictable, and isolating scroll prevents the main action from moving out of reach. |
+| Step 2 — Travel dates | The selected destination stays visible and editable. Departure and return dates must be in the future and the return cannot precede departure. The displayed trip length is inclusive of both travel dates. | Keeping trip context on screen reduces accidental input for the wrong destination. Inclusive dates match how package validity and allowance requirements are calculated on the backend. |
+| Step 3 — Review and adjust | One validated plan is shown with its package sequence, price, destination, duration, combined validity, allowances, and activation count. Usage evidence and **Why this fits** sit behind optional **More details**. A larger free-text chat replaces suggested-answer chips; after a successful refinement, the updated recommendation scrolls into the top reading position. | The default card answers the decision-making questions without overwhelming the customer. Evidence remains available for reviewers, while open text lets users describe real needs in their own words. Returning focus to the changed card makes the result of a chat request obvious. |
+| Step 4 — Final recommendation | The completion view repeats only the facts needed to act: sequence, total cost, coverage, allowances, and activation order. It omits the longer **Why this fits** explanation. Activation codes remain hidden and copy/dialer actions remain disabled until the customer acknowledges the preferred partner-network note. | The final page is an action checklist rather than a second analysis screen. The acknowledgement reduces the chance of activating while connected to the wrong carrier, and the dialer never activates a package automatically. |
+
+If no plan can be shown, the empty state retains the destination and dates and returns the customer to adjustment instead of discarding the trip.
+
+### Conversation behavior
+
+- The first recommendation requires no chat prompt. Six months of the signed-in customer's usage are analysed and scaled to the selected trip before a package plan is requested.
+- An exact Smart Recommendation History hit returns a freshly revalidated plan without calling Gemini. A miss uses the planner, and an unavailable or invalid model response uses the same backend requirements with the deterministic optimizer.
+- Each chat message is interpreted against the complete current requirements and the **latest selected plan**, not only the original plan. This makes a second or third refinement cumulative.
+- An explicit request such as “I need 200 local minutes” sets a minimum. Every service the user did not change must remain at least as generous as it is in the current plan; the selected plan may exceed the requested minimum if that is the next valid catalogue tier.
+- A relative request such as “I need more data” means the next valid allowance above the current plan; the user is not asked to invent an exact number. “I need more minutes” asks one useful clarification—local or international—then applies the same next-tier rule.
+- Clarifications use the lightweight interpreter only. The package planner is called only after the message has become complete technical requirements and Smart History has missed.
+- Greetings and previous/original-plan navigation are handled locally. Model ambiguity, invalid output, or downtime never ends the journey: the backend clarifies or applies deterministic parsing and optimization. A quota or frequency failure is labelled **Gemini limit** in chat so it is distinguishable from an interpretation question.
+
+### Mobile layout and motion choices
+
+- Forward workflow views enter from the left and settle to the right; back views enter from the right and settle to the left. The shared `360 ms` eased transition is used across authenticated screens, segmented panels, and workflow steps so progression and regression feel related rather than abrupt.
+- `prefers-reduced-motion` removes non-essential movement while preserving navigation and state changes.
+- On desktop, Phone and Expanded preview controls remain outside the constrained application surface and stay reachable in either mode. Expanded content is width-limited for readability rather than stretching indefinitely.
+- Text-based `e&` marks use compact negative letter spacing so the two characters read as one brand mark. The same treatment is reused in authentication, the app header, assistant avatars, and installation guidance for visual continuity.
+- On iPhone, the viewport disables browser zoom and mobile form fields use a 16 px font to prevent focus zoom. `visualViewport` is tracked separately from the stable application height so opening the Apple keyboard does not push the bottom navigation upward.
+- Focusing the roaming adjustment box scrolls the chat card to the top of the visible application area, leaving the remaining viewport for the keyboard. After the keyboard closes, the stable shell height is restored.
+- Small labels, metadata, chat text, country names, and tap targets were raised to a consistent readable scale without making the compact phone layout feel oversized.
+
+### Copy and placeholder boundaries
+
+Static customer-facing screens avoid repeated “demo” or “prototype” labels because those notices competed with the actual task. A placeholder action still explains its boundary at the moment it is used—for example, the plan-switch confirmation states that it does not change a real account. The README remains the source of truth for all local and external-integration boundaries, and the seeded identities use unmistakably fictional `.example.test` details.
 
 ## Database structure
 
@@ -105,6 +145,8 @@ The seed module creates exactly:
 - 4 required login accounts
 - 6 monthly usage rows per account, or 24 rows total
 - 42 active, repeatable, stackable roaming packages across 7 families
+
+The seven package families are `Roam Essentials`, `Roam with Balance`, `Roam Premium`, `Data First`, `Data Plus`, `Voice First`, and `Voice Plus`. Each family has 1-, 3-, 7-, 10-, 14-, and 30-day tiers. Package codes are stable database identifiers and may keep an older prefix even when customer-facing wording changes.
 
 Existing unrelated users, bills, complaints, diagnostics, and other records are preserved. Re-running the seed operation updates the defined seed rows without duplicating them.
 
@@ -143,8 +185,13 @@ Standalone greetings and package-history navigation are handled locally without 
 
 Gemini is called only by the Flask backend. The API key is never included in JavaScript, templates, API responses, or logs.
 
-1. Copy `.env.example` to `.env` if `.env` is not already present.
-2. Open the project-root `.env` file.
+1. From the repository root, copy `.env.example` to `.env` if `.env` is not already present:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+2. Open `.env` in any text editor.
 3. Insert the key after `GEMINI_API_KEY=`.
 
 ```dotenv
@@ -156,19 +203,14 @@ GEMINI_RATE_LIMIT_COOLDOWN_SECONDS=60
 GEMINI_REQUEST_LOG_DIR=instance/api_request_logs
 ```
 
-The exact local path in this repository is:
-
-```text
-UI POC/.env
-```
-
-`.env` is ignored by Git. If the key is absent, times out, reaches a quota limit, or returns an unusable response, the application continues through the deterministic optimizer.
+The file is always `<repository-root>/.env`; no user-specific absolute path is required. `.env` is ignored by Git. If the key is blank, absent, times out, reaches a quota limit, or returns an unusable response, the application continues through the deterministic optimizer. Copied example placeholders are also treated as unconfigured rather than being sent to Google.
 
 The Gemini service uses:
 
 - `google-genai`, not the deprecated `google-generativeai` package
 - Strict Pydantic JSON schemas for both model roles
 - `thinking_level="high"` for both models
+- No `temperature`, `top_p`, or `top_k` override; Gemini 3.x uses its provider defaults
 - The same backend-only `GEMINI_API_KEY` with separate configured model IDs
 - Gemini 3.5 Flash-Lite as a stateless requirements interpreter with `store=False`, no `previous_interaction_id`, and no package catalogue
 - Gemini 3.6 Flash as the package planner with `store=True`
@@ -224,7 +266,11 @@ The roaming routes never accept a browser-provided user ID as authoritative; the
 
 ## PWA and offline behavior
 
-The manifest starts at `/`, so normal Flask authentication remains authoritative: an active session opens the application and an unauthenticated session redirects to sign-in. The installed presentation uses portrait standalone mode, the existing red theme, local opaque icons, iPhone safe areas, and 16 px mobile form controls to avoid input zoom.
+The manifest starts at `/`, so normal Flask authentication remains authoritative: an active session opens the application and an unauthenticated session redirects to sign-in. The installed presentation uses portrait standalone mode, the existing red theme, iPhone safe areas, and 16 px mobile form controls to avoid focus zoom. The viewport also disables pinch zoom so the installed experience behaves like a stable app surface rather than a freely zoomable webpage.
+
+The 180×180 Apple touch icon uses the supplied red **e& / etisalat and** artwork. Standard and maskable local PNG variants support other install surfaces. iOS caches Home Screen artwork aggressively; after an icon update, remove the existing Home Screen item and add it again if the old artwork remains.
+
+Mobile keyboard handling tracks `window.visualViewport` while retaining a separate stable application height. When a form control is focused, the shell and bottom navigation keep their position and the relevant control—especially the roaming adjustment chat—is aligned into the visible area above the keyboard. This behavior is progressive enhancement: all inputs still work in browsers without `visualViewport`.
 
 The root service worker uses the version declared as `CACHE_VERSION` in `app/static/service-worker.js`. It caches only local CSS, JavaScript, icons, the manifest, and the session-neutral offline page. Navigations are always network-first and are never stored. `/app`, `/auth`, `/api`, non-GET requests, personalized HTML, CSRF tokens, SQLite-derived data, and Gemini responses are never cached.
 
@@ -269,7 +315,7 @@ UI POC/
 |   `-- static/
 |       |-- manifest.webmanifest    Install identity, scope, display mode, colors, and icons
 |       |-- service-worker.js       Versioned static cache and network-first navigation fallback
-|       |-- icons/                  Apple, standard, and maskable generated PNG icons
+|       |-- icons/                  Branded Apple, standard, and maskable local PNG icons
 |       |-- images/                 Local interface artwork, including the roaming-advisor hero
 |       |-- css/                    Design system, phone frame, safe-area, and offline styles
 |       `-- js/                     Workflows plus PWA registration, updates, install help, and offline status
@@ -286,6 +332,7 @@ UI POC/
 |   |-- test_roaming_api.py         Authentication, current-user isolation, APIs, and saved plans
 |   |-- test_roaming_chat_intent.py Greetings and previous/original navigation language
 |   |-- test_pwa.py                 Manifest, icons, routes, cache policy, metadata, and auth start flow
+|   |-- test_portability.py         Secret templates, ignore rules, path independence, and key-shape scan
 |   |-- test_smart_history.py       Exact matching, splits, revalidation, privacy, call counts, and CLI commands
 |   |-- test_public_server.py       Proxy trust, HTTPS cookies, CSRF, Waitress, and local HTTP behavior
 |   `-- browser/                    Playwright end-to-end customer journeys and console audit
@@ -303,24 +350,40 @@ UI POC/
 
 ## Local setup
 
-From the repository root:
+### Prerequisites
 
-```bash
-python -m venv .venv
-```
+- Python 3.11 or newer; Python 3.14.2 is supported and covered by CI.
+- Git only if cloning from the command line. A GitHub ZIP download works as well.
+- No Node.js, npm, frontend compiler, database server, or API key is required.
+- Chromium is needed only for the optional browser tests.
 
-Windows PowerShell:
+### Get the source
+
+Clone the branch containing this application:
 
 ```powershell
-.venv\Scripts\Activate.ps1
+git clone --branch UI-Demo --single-branch https://github.com/LeKiksss/e-InternshipTrio.git
+Set-Location e-InternshipTrio
+```
+
+Alternatively, select the `UI-Demo` branch on GitHub, choose **Code → Download ZIP**, extract it anywhere, and open a terminal in the extracted folder. Every command below is relative to that repository root; no developer-specific path is assumed.
+
+### First run on Windows PowerShell
+
+```powershell
+python -m venv .venv
+& ".\.venv\Scripts\Activate.ps1"
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python run.py
 ```
 
-macOS or Linux:
+### First run on macOS or Linux
 
 ```bash
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python run.py
 ```
@@ -331,13 +394,49 @@ Open:
 http://127.0.0.1:5000
 ```
 
-`python run.py` serves locally through Waitress on `127.0.0.1`. Public temporary access uses the stricter `serve_public.py` entry point described below. Neither entry point exposes Flask's built-in development server.
+`python run.py` serves locally through Waitress on `127.0.0.1`. On the first launch, the application creates `<repository-root>/instance/prototype.db`, upgrades its schema if necessary, and inserts the required seed records. The ignored `instance/` directory does not need to be downloaded or copied from another developer.
 
-No Node.js, npm, CDN, or frontend build process is required.
+Public temporary access uses the stricter `serve_public.py` entry point described below. Neither entry point exposes Flask's built-in development server.
+
+On later local runs, dependencies do not need to be reinstalled unless `requirements.txt` changed:
+
+```powershell
+& ".\.venv\Scripts\Activate.ps1"
+python run.py
+```
+
+Stop the server with `Ctrl+C`. Waitress does not auto-reload source changes, so after modifying Python, templates, CSS, or JavaScript, stop and restart the active Python server. When using a Quick Tunnel on the same port, cloudflared may stay running while `serve_public.py` is restarted; the HTTPS URL normally remains the same until cloudflared itself is stopped.
+
+### Optional configuration
+
+Local mode works without `.env` and without Gemini. To configure either, copy the safe blank template:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `SECRET_KEY` | Public mode only | Stable session-signing secret with at least 32 characters |
+| `APP_HOST`, `APP_PORT` | No | Local bind address and port; defaults to `127.0.0.1:5000` |
+| `DATABASE_URL` | No | Optional database override; the default SQLite file is created under `instance/` |
+| `GEMINI_API_KEY` | No | Enables backend-only Gemini interpretation and planning |
+| `GEMINI_INTERPRETER_MODEL`, `GEMINI_PLANNER_MODEL` | No | Override the two default Gemini model IDs |
+| `GEMINI_TIMEOUT_SECONDS` | No | Provider request timeout |
+| `GEMINI_RATE_LIMIT_COOLDOWN_SECONDS` | No | Local cooldown after a provider quota response |
+| `GEMINI_REQUEST_LOG_DIR` | No | Request-audit directory, resolved relative to the repository root when not absolute |
+
+Generate a public-mode `SECRET_KEY` without relying on a machine-specific value:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Paste the generated value after `SECRET_KEY=` in the local `.env`. Never paste it into `.env.example`, source files, screenshots, issues, or commits.
 
 ## Install on iPhone without a Mac
 
-Before public access, ensure the project-root `.env` contains a unique `SECRET_KEY` of at least 32 characters. Never commit `.env`. The downloaded cloudflared 2026.7.2 client is suitable. Rename `cloudflared-windows-amd64.exe` to `cloudflared.exe`, place it in a dedicated folder such as `C:\Tools\cloudflared`, and add that folder to `PATH`.
+Before public access, ensure the project-root `.env` contains a unique `SECRET_KEY` of at least 32 characters. Never commit `.env`. Cloudflared 2026.7.2 was used during verification. Rename the Windows download to `cloudflared.exe`, place it in any dedicated folder, and add that folder to `PATH`.
 
 Windows steps:
 
@@ -420,6 +519,19 @@ To rebuild all local data, stop the server, delete `instance/prototype.db`, and 
 
 Do not commit `prototype.db`. Portability comes from the tracked models, schema upgrade, and seed definitions—not from sharing one developer's database file. Each team member receives an independent, reproducible local database after cloning and launching the application.
 
+## Repository safety and portability audit
+
+The distributable repository is intentionally separated from each developer's machine:
+
+- `.env`, `.env.*`, `.venv/`, `instance/`, API request logs, and SQLite/database extensions are ignored. Only the blank `.env.example` template is tracked.
+- The current tracked tree and reachable Git history were scanned for Google, GitHub, and AWS key shapes, private-key markers, local usernames, and Windows/macOS/Linux user-home paths. No credential-shaped value or developer-specific path was found.
+- Configuration loads `.env` from the repository root regardless of the terminal's current directory. Relative Gemini request-log folders are also rooted there rather than in a developer-specific working directory.
+- Empty or copied example values do not enable Gemini or become a stable Flask signing secret. Local mode safely generates a temporary secret; public mode refuses to start until a unique stable secret is supplied.
+- The database, schema upgrades, seed definitions, templates, JavaScript, CSS, images, PWA icons, and Python dependencies required to run the application are tracked. A fresh clone generates only its own ignored runtime data.
+- `tests/test_portability.py` protects the blank secret template, required ignore rules, relative path resolution, and common credential/user-path patterns in distributable text files.
+
+The Gemini key remains backend-only. It is not rendered into HTML or JavaScript, returned by an API, written into request logs, or required by automated tests. When publishing changes, stage intended source files explicitly and confirm `git status` before committing.
+
 ## Tests
 
 Install the browser once per environment:
@@ -444,6 +556,17 @@ python -m pytest -q tests/browser/test_pwa.py
 ```
 
 Automated tests never make a real Gemini request. They use an empty key for deterministic fallback or inject controlled structured responses.
+
+The roaming and mobile regression coverage specifically checks:
+
+- exact usage scaling, package facts, multi-package scheduling, temporal segments, and deterministic fallback;
+- two-model routing, high thinking, omitted sampling overrides, request logging, continuation IDs, quota cooldown, and Smart History call avoidance;
+- explicit and comparative refinements, preservation of untouched allowances, sequential changes against the latest plan, one-question clarification, and original/previous navigation;
+- prefix country search, one-row country layout, list-only destination scrolling, a visible **Continue** button, and absence of horizontal overflow;
+- reachable Phone/Expanded preview controls, stable iPhone keyboard behavior, directional transitions across every workflow, and reduced-motion behavior;
+- six-month Usage History, carrier acknowledgement, masked activation controls, saved recommendations, logout clearing, and repeatable end-to-end journeys.
+
+GitHub Actions runs the same Pytest suite on Windows and Linux using Python 3.11 and 3.14. GitHub sends a workflow notification when any job in that operating-system/version matrix fails; the tests live in this repository under `tests/`, while GitHub only provides the clean runner that executes them after a push.
 
 ## Known boundaries
 

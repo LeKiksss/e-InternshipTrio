@@ -47,7 +47,10 @@ def test_valid_login(client):
 
 
 def test_invalid_login(client):
-    response = client.post("/auth/login", data={"identity": "demo@prototype.local", "password": "wrong"})
+    response = client.post(
+        "/auth/login",
+        data={"identity": "aisha@example.test", "password": "wrong"},
+    )
     assert response.status_code == 200
     assert b"incorrect" in response.data
 

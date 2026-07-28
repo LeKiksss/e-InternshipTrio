@@ -296,74 +296,6 @@ def seed_roaming_packages():
         _apply_package(row, definition, supported_destinations)
 
 
-def seed_existing_account_data():
-    user = User.query.filter_by(email="demo@prototype.local").first()
-    if user is None:
-        user = User(
-            full_name="Customer Account",
-            email="demo@prototype.local",
-            phone_number="+971501234567",
-            notification_preferences="Important updates",
-            preferred_contact_method="SMS",
-        )
-        user.set_password("Demo123!")
-        db.session.add(user)
-        db.session.flush()
-    elif user.full_name == "Prototype Demo User":
-        user.full_name = "Customer Account"
-
-    diagnostic = DiagnosticResult.query.filter_by(user_id=user.id).first()
-    if diagnostic is None:
-        db.session.add(
-            DiagnosticResult(
-                user_id=user.id,
-                download_speed=172.4,
-                upload_speed=29.8,
-                latency=21,
-                verdict="Excellent",
-                location_label="Downtown Dubai",
-                created_at=datetime.now() - timedelta(days=5),
-            )
-        )
-    elif diagnostic.location_label == "Downtown Dubai — demo location":
-        diagnostic.location_label = "Downtown Dubai"
-
-    if BillRecord.query.filter_by(user_id=user.id).first() is None:
-        db.session.add(
-            BillRecord(
-                user_id=user.id,
-                total_amount=468,
-                due_date=(datetime.now() + timedelta(days=5)).strftime("%d %b %Y"),
-                data_charges=240,
-                call_charges=72,
-                roaming_charges=96,
-                addon_charges=60,
-                anomaly_summary=(
-                    "Bill is 28% higher than usual; roaming charges caused most of the increase."
-                ),
-            )
-        )
-
-    ticket = ComplaintTicket.query.filter_by(user_id=user.id).first()
-    if ticket is None:
-        db.session.add(
-            ComplaintTicket(
-                user_id=user.id,
-                ticket_number="ET-2026-00142",
-                category="Network",
-                severity="High",
-                summary="Intermittent mobile data near the Marina during afternoon hours.",
-                status="Assigned",
-                latest_update="Assigned to Network Operations for an area coverage review.",
-                expected_resolution="Within 24 hours",
-                assigned_department="Network Operations",
-                location_label="Dubai Marina",
-            )
-        )
-    elif ticket.location_label == "Dubai Marina — demo location":
-        ticket.location_label = "Dubai Marina"
-
-
 def seed_primary_account_activity(user):
     """Give the primary seeded sign-in a complete dashboard without altering other users."""
 
@@ -410,7 +342,6 @@ def seed_primary_account_activity(user):
 
 
 def seed_all():
-    seed_existing_account_data()
     users = seed_users()
     seed_primary_account_activity(users["aisha@example.test"])
     seed_user_monthly_usage(users)
