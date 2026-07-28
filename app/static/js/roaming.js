@@ -231,25 +231,38 @@
       };
       const alignImmediately = () => {
         const inlineScrollBehavior = appScroll.style.scrollBehavior;
-        appScroll.style.scrollBehavior = "auto";
+        const inlinePriority = appScroll.style.getPropertyPriority("scroll-behavior");
+        appScroll.style.setProperty("scroll-behavior", "auto", "important");
         appScroll.scrollTop = targetScrollTop();
-        appScroll.style.scrollBehavior = inlineScrollBehavior;
+        void appScroll.scrollTop;
+        if (inlineScrollBehavior) appScroll.style.setProperty("scroll-behavior", inlineScrollBehavior, inlinePriority);
+        else appScroll.style.removeProperty("scroll-behavior");
+      };
+      const isAligned = () => {
+        const scrollBounds = appScroll.getBoundingClientRect();
+        const cardBounds = card.getBoundingClientRect();
+        return Math.abs(cardBounds.top - scrollBounds.top - 8) <= 2;
+      };
+      const verifyAlignment = (delayMs) => {
+        window.setTimeout(() => {
+          if (!isAligned()) alignImmediately();
+        }, delayMs);
       };
       requestAnimationFrame(() => {
         const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         if (window.PROTOTYPE?.testing || reducedMotion) {
           alignImmediately();
+          requestAnimationFrame(() => {
+            if (!isAligned()) alignImmediately();
+          });
+          verifyAlignment(100);
           return;
         }
         appScroll.scrollTo({
           top: targetScrollTop(),
           behavior: "smooth",
         });
-        window.setTimeout(() => {
-          const scrollBounds = appScroll.getBoundingClientRect();
-          const cardBounds = card.getBoundingClientRect();
-          if (Math.abs(cardBounds.top - scrollBounds.top - 8) > 2) alignImmediately();
-        }, 700);
+        verifyAlignment(700);
       });
     }
 

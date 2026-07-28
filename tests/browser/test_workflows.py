@@ -415,10 +415,12 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     scroll_position_before_refinement = page.locator("#app-scroll").evaluate(
         """(node) => {
           const inlineScrollBehavior = node.style.scrollBehavior;
-          node.style.scrollBehavior = "auto";
+          const inlinePriority = node.style.getPropertyPriority("scroll-behavior");
+          node.style.setProperty("scroll-behavior", "auto", "important");
           node.scrollTop = node.scrollHeight;
           const position = node.scrollTop;
-          node.style.scrollBehavior = inlineScrollBehavior;
+          if (inlineScrollBehavior) node.style.setProperty("scroll-behavior", inlineScrollBehavior, inlinePriority);
+          else node.style.removeProperty("scroll-behavior");
           return position;
         }"""
     )
