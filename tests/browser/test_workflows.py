@@ -412,9 +412,15 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     page.locator("#roaming-adjustment").fill(
         "For the first week I will have Wi-Fi and need light usage, and I need heavy data in the second week."
     )
-    page.locator("#app-scroll").evaluate("(node) => { node.scrollTop = node.scrollHeight; }")
     scroll_position_before_refinement = page.locator("#app-scroll").evaluate(
-        "(node) => node.scrollTop"
+        """(node) => {
+          const inlineScrollBehavior = node.style.scrollBehavior;
+          node.style.scrollBehavior = "auto";
+          node.scrollTop = node.scrollHeight;
+          const position = node.scrollTop;
+          node.style.scrollBehavior = inlineScrollBehavior;
+          return position;
+        }"""
     )
     assert scroll_position_before_refinement > 0
     expect(send_adjustment).to_be_enabled()

@@ -224,14 +224,32 @@
     function scrollToUpdatedRecommendation() {
       const card = $('[data-testid="current-usage-recommendation"]');
       if (!card || !appScroll) return;
-      requestAnimationFrame(() => {
+      const targetScrollTop = () => {
         const scrollBounds = appScroll.getBoundingClientRect();
         const cardBounds = card.getBoundingClientRect();
-        const target = appScroll.scrollTop + cardBounds.top - scrollBounds.top - 8;
+        return Math.max(0, appScroll.scrollTop + cardBounds.top - scrollBounds.top - 8);
+      };
+      const alignImmediately = () => {
+        const inlineScrollBehavior = appScroll.style.scrollBehavior;
+        appScroll.style.scrollBehavior = "auto";
+        appScroll.scrollTop = targetScrollTop();
+        appScroll.style.scrollBehavior = inlineScrollBehavior;
+      };
+      requestAnimationFrame(() => {
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (window.PROTOTYPE?.testing || reducedMotion) {
+          alignImmediately();
+          return;
+        }
         appScroll.scrollTo({
-          top: Math.max(0, target),
-          behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+          top: targetScrollTop(),
+          behavior: "smooth",
         });
+        window.setTimeout(() => {
+          const scrollBounds = appScroll.getBoundingClientRect();
+          const cardBounds = card.getBoundingClientRect();
+          if (Math.abs(cardBounds.top - scrollBounds.top - 8) > 2) alignImmediately();
+        }, 700);
       });
     }
 
