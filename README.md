@@ -276,6 +276,14 @@ The root service worker uses the version declared as `CACHE_VERSION` in `app/sta
 
 When the server cannot be reached, navigation falls back to a generic connection page without account information. SQLite, login, Gemini, and the application workflows remain server-side and do not operate offline. When frontend assets change, increment `CACHE_VERSION`; the application then offers a Refresh action when the new worker is ready instead of interrupting an active form or chat.
 
+## User manual assets
+
+The `docs/roaming_user_manual_capture/` folder contains the Roaming Recommender user-manual handoff and its reviewed screenshot set:
+
+- `USER_MANUAL_HANDOFF.md` — complete customer workflow, UI labels, validation and safety notes, screenshot manifest, and observed behavior.
+- `screenshots/mobile/` — primary phone/PWA walkthrough screenshots.
+- `screenshots/desktop/` — desktop Phone and Expanded mode reference screenshots.
+
 ## Project structure
 
 ```text
@@ -319,6 +327,8 @@ UI POC/
 |       |-- images/                 Local interface artwork, including the roaming-advisor hero
 |       |-- css/                    Design system, phone frame, safe-area, and offline styles
 |       `-- js/                     Workflows plus PWA registration, updates, install help, and offline status
+|-- docs/
+|   `-- roaming_user_manual_capture/ User-manual handoff plus mobile and desktop screenshots
 |-- tests/
 |   |-- conftest.py                 In-memory application/database fixtures
 |   |-- test_seed_data.py           Seed counts, constraints, hashes, preservation, idempotency
