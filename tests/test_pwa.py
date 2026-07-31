@@ -123,7 +123,7 @@ def test_private_html_and_api_responses_are_never_cacheable(client):
 
 def test_service_worker_policy_excludes_private_and_mutating_requests():
     source = (STATIC / "service-worker.js").read_text(encoding="utf-8")
-    assert 'const CACHE_VERSION = "v12"' in source
+    assert 'const CACHE_VERSION = "v13"' in source
     assert 'request.method !== "GET"' in source
     assert 'request.mode === "navigate"' in source
     assert 'fetch(request, { cache: "no-store" })' in source

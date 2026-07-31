@@ -196,10 +196,12 @@
     }
     function renderAcknowledgement() {
       const acknowledged = Boolean(controller.state.carrierAcknowledged);
+      const hasMultipleActivations = expandedActivations().length > 1;
       $("#carrier-acknowledgement").checked = acknowledged;
       $("#activation-card").classList.toggle("locked", !acknowledged);
       $("#activation-code").setAttribute("aria-hidden", String(!acknowledged));
       $("#copy-code").disabled = !acknowledged; $("#open-dialer").disabled = !acknowledged; $("#roaming-done").disabled = !acknowledged;
+      $("#open-dialer").textContent = hasMultipleActivations ? "Open first code in dialer" : "Open code in dialer";
       $("#activation-lock-message").hidden = acknowledged;
       renderActivationSequence();
     }
@@ -355,7 +357,7 @@
     $("#view-recent-roaming").addEventListener("click", () => { if (controller.state.recommendation) controller.go("result"); });
     $("#saved-recommendations-list").addEventListener("click", (event) => { const card = event.target.closest(".saved-roaming-card"); if (!card) return; if (event.target.closest("[data-view-saved]")) viewSaved(card._recommendation); if (event.target.closest("[data-remove-saved]")) confirmAction({ title: "Remove saved recommendation?", message: "This removes the saved plan from the current session.", action: "Remove", tone: "danger", onConfirm: async () => { try { const response = await api(`/api/roaming/saved/${card.dataset.savedId}`, { method: "DELETE" }); renderSavedRecommendations(response.recommendations); if (controller.state.savedId === card.dataset.savedId) controller.update({ savedId: null }); toast("Saved recommendation removed."); } catch (error) { toast(error.message, "error"); } } }); });
     $("#copy-code").addEventListener("click", async (event) => { if (!controller.state.carrierAcknowledged) return; const button = event.currentTarget; const codes = expandedActivations().map((item) => `${item.order}. ${item.code}`).join("\n"); try { await navigator.clipboard.writeText(codes); } catch { const area = document.createElement("textarea"); area.value = codes; document.body.append(area); area.select(); document.execCommand("copy"); area.remove(); } button.textContent = "Copied"; toast("Activation codes copied in order."); setTimeout(() => button.textContent = "Copy activation codes", 1500); });
-    $("#open-dialer").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) return; const first = expandedActivations()[0]; if (!first) return; confirmAction({ title: "Open your dialer?", message: "The first activation code will be placed in the dialer. Nothing is activated automatically.", action: "Open dialer", onConfirm: () => { window.location.href = `tel:${first.code.replace(/#/g, "%23")}`; } }); });
+    $("#open-dialer").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) return; const activations = expandedActivations(); const first = activations[0]; if (!first) return; const hasMultipleActivations = activations.length > 1; confirmAction({ title: "Open your dialer?", message: hasMultipleActivations ? "The first activation code will be placed in the dialer. Nothing is activated automatically." : "The activation code will be placed in the dialer. Nothing is activated automatically.", action: "Open dialer", onConfirm: () => { window.location.href = `tel:${first.code.replace(/#/g, "%23")}`; } }); });
 
     await controller.restore();
     syncAdjustmentButton();

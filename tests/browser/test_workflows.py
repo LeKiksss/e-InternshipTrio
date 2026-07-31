@@ -240,6 +240,55 @@ def test_complaint_back_state_and_second_request(page, live_app_url):
     expect(page.locator("#ticket-list .ticket-row")).to_have_count(3)
 
 
+def test_roaming_dialer_copy_matches_activation_count(page, live_app_url):
+    login_demo(page, live_app_url)
+    open_screen(page, "roaming")
+
+    start = date.today() + timedelta(days=2)
+    end_seven_days = start + timedelta(days=6)
+    end_nine_days = start + timedelta(days=8)
+
+    page.locator("#start-roaming").click()
+    page.locator('[data-country="United Kingdom"]').click()
+    page.locator("#destination-next").click()
+    page.locator("#trip-start").fill(start.isoformat())
+    page.locator("#trip-end").fill(end_seven_days.isoformat())
+    page.locator("#dates-next").click()
+
+    expect(page.locator('[data-testid="current-usage-recommendation"]')).to_be_visible()
+    expect(page.locator("#usage-activation-count")).to_have_text("1")
+    page.locator("#continue-roaming-plan").click()
+    expect(page.locator('[data-testid="final-roaming-recommendation"]')).to_be_visible()
+    expect(page.locator("#package-activation-count")).to_have_text("1")
+    expect(page.locator("#open-dialer")).to_have_text("Open code in dialer")
+
+    page.locator("#carrier-acknowledgement").check()
+    page.locator("#open-dialer").click()
+    expect(page.locator("#confirm-message")).to_have_text(
+        "The activation code will be placed in the dialer. Nothing is activated automatically."
+    )
+    page.locator("#confirm-sheet [data-close-sheet]").click()
+
+    page.locator("#roaming-result-back").click()
+    page.locator('[data-edit-roaming="2"]').first.click()
+    page.locator("#trip-end").fill(end_nine_days.isoformat())
+    page.locator("#dates-next").click()
+
+    expect(page.locator('[data-testid="current-usage-recommendation"]')).to_be_visible()
+    expect(page.locator("#usage-activation-count")).to_have_text("3")
+    page.locator("#continue-roaming-plan").click()
+    expect(page.locator('[data-testid="final-roaming-recommendation"]')).to_be_visible()
+    expect(page.locator("#package-activation-count")).to_have_text("3")
+    expect(page.locator("#open-dialer")).to_have_text("Open first code in dialer")
+
+    page.locator("#carrier-acknowledgement").check()
+    page.locator("#open-dialer").click()
+    expect(page.locator("#confirm-message")).to_have_text(
+        "The first activation code will be placed in the dialer. Nothing is activated automatically."
+    )
+    page.locator("#confirm-sheet [data-close-sheet]").click()
+
+
 def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_url):
     login_demo(page, live_app_url)
     open_screen(page, "roaming")

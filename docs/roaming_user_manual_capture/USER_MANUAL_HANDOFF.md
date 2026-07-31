@@ -24,7 +24,7 @@ This handoff documents the customer-facing **Roaming Recommender** exactly as it
 6. Review the plan in **Step 3 of 4 – Review and adjust**. Open **More details** or use **Adjust recommendation** if needed.
 7. Select **Continue with this plan**.
 8. On **Step 4 of 4 – Final recommendation**, review the complete sequence and confirm the preferred-partner acknowledgement.
-9. Use **Copy activation codes** or **Open first code in dialer** only after reviewing the activation guidance. Nothing is activated automatically.
+9. Use **Copy activation codes** and **Open code in dialer** for a single activation, or **Open first code in dialer** when the plan contains multiple activations, only after reviewing the activation guidance. Nothing is activated automatically.
 10. Optionally select **Save Selection**, then select **Done**, **Start New**, or **Home**.
 
 ## Detailed customer instructions
@@ -142,10 +142,10 @@ The current fallback path did **not** render the requested split. It returned on
 - The heading is **Your plan is ready**. The screen shows destination, dates, inclusive trip length, **Complete package sequence**, package order, coverage days, allowances, total price, combined validity, activation count, and partner status.
 - The final card renders an activation code beside each package. Separately, the **ACTIVATION ORDER** sequence masks its code until acknowledgement. This distinction is important: in the current UI, the code is already visible in the package card before acknowledgement even though the activation sequence, Copy, dialer, and Done controls remain protected.
 - **Confirm your preferred partner** instructs: **Before activation, make sure your phone is connected to a preferred partner network.**
-- Before acknowledgement, the activation-sequence code is masked, **Copy activation codes**, **Open first code in dialer**, and **Done** are disabled, and the message is **Confirm the preferred partner connection above to reveal activation codes.**
+- Before acknowledgement, the activation-sequence code is masked, **Copy activation codes**, the activation-aware dialer button, and **Done** are disabled, and the message is **Confirm the preferred partner connection above to reveal activation codes.**
 - Checking **I confirm that I am connected to a preferred partner network.** reveals the activation-sequence code and enables the protected actions. The toast is **Preferred partner confirmed. Activation codes are now available.**
 - **Copy activation codes** copies an ordered list. The button briefly becomes **Copied** and the toast is **Activation codes copied in order.**
-- **Open first code in dialer** opens a confirmation sheet: **Open your dialer?** / **The first activation code will be placed in the dialer. Nothing is activated automatically.** The confirm action is **Open dialer**.
+- For one activation, the button reads **Open code in dialer** and the confirmation says **The activation code will be placed in the dialer. Nothing is activated automatically.** For multiple activations, it reads **Open first code in dialer** and says **The first activation code will be placed in the dialer. Nothing is activated automatically.** Both use the title **Open your dialer?** and the confirm action **Open dialer**.
 - Guidance under the sequence reads **Activate each package in the displayed order and confirm the carrier response before continuing.** and **No package will activate automatically.**
 - **Save Selection** is available independently of the acknowledgement. **Done** requires acknowledgement; otherwise the toast is **Acknowledge the network note before finishing.**
 - The final-screen back arrow returns to Step 3 for the active journey. When viewing a saved plan, it returns to the landing page. **Exit** returns to the landing page.
@@ -199,7 +199,7 @@ The current fallback path did **not** render the requested split. It returned on
 | ← (Back to recommendation adjustment) | Step 4 | Always | Returns from final plan | Opens Step 3, or landing for a saved-plan view |
 | Preferred-partner checkbox | Step 4 | Always | Records acknowledgement | Reveals sequence code; enables Copy, dialer, and Done |
 | Copy activation codes | Step 4 | Partner acknowledged | Copies ordered codes | Brief **Copied** state and success toast |
-| Open first code in dialer | Step 4 | Partner acknowledged | Opens confirmation | Confirming places first code in device dialer |
+| Open code in dialer / Open first code in dialer | Step 4 | Partner acknowledged; label depends on whether the plan has one or multiple activations | Opens confirmation | Confirming places the code, or the first code in a sequence, in the device dialer |
 | Save Selection | Step 4 | Current recommendation is not already saved | Saves to session | Becomes disabled **Saved** and adds landing card |
 | Done | Step 4 | Partner acknowledged | Completes current journey | Returns to roaming landing |
 | Start New | Step 4 | Always | Clears active draft | Opens a fresh Destination step |
@@ -249,7 +249,7 @@ The current fallback path did **not** render the requested split. It returned on
 | Partner confirmed | **Preferred partner confirmed. Activation codes are now available.** |
 | Activation guidance | **Activate each package in the displayed order and confirm the carrier response before continuing.** / **No package will activate automatically.** |
 | Copy success | **Activation codes copied in order.** and temporary **Copied** button text |
-| Dialer confirmation | **Open your dialer?** / **The first activation code will be placed in the dialer. Nothing is activated automatically.** |
+| Dialer confirmation | **Open your dialer?** / **The activation code will be placed in the dialer. Nothing is activated automatically.** for one activation; the sentence adds **first** for multiple activations |
 | Done without acknowledgement | **Acknowledge the network note before finishing.** |
 | Offline | **We cannot reach e& Care right now** and the server-status/retry messages listed in the PWA section |
 
@@ -305,10 +305,10 @@ All authenticated screenshots below contain seeded POC customer/package data. No
 | SUPPORTING | [26_remove_saved.png](screenshots/mobile/26_remove_saved.png) | Landing – Saved | Removal confirmation sheet | Select Remove on a saved card | Remove saved recommendation?, Remove, Cancel | Figure 22. Confirm before removing a saved recommendation. | Blurred background contains seeded plan data |
 | ESSENTIAL | [27_continue_with_plan.png](screenshots/mobile/27_continue_with_plan.png) | Step 3 – Accept | Updated plan with primary acceptance action | Complete split test and scroll to chat/actions | Assistant message and Continue with this plan | Figure 23. Continue when the displayed plan is acceptable. | Seeded fallback result |
 | ESSENTIAL | [28_final_recommendation.png](screenshots/mobile/28_final_recommendation.png) | Step 4 – Final | Top of final plan | Select Continue with this plan | Trip dates, package sequence, code, price, allowances | Figure 24. Review the complete final package sequence. | Seeded package and activation code |
-| ESSENTIAL | [29_activation_before_acknowledgement.png](screenshots/mobile/29_activation_before_acknowledgement.png) | Step 4 – Activation | Protected state before acknowledgement | Scroll to partner note without checking it | Unchecked box, masked sequence, disabled Copy/dialer/Done | Figure 25. Confirm the preferred partner before using activation actions. | Seeded plan; activation sequence code masked |
-| ESSENTIAL | [30_partner_acknowledged.png](screenshots/mobile/30_partner_acknowledged.png) | Step 4 – Activation | Enabled state after acknowledgement | Check preferred-partner box | Checked state, visible code, enabled controls and Done | Figure 26. Acknowledgement reveals and enables activation controls. | Seeded activation code |
-| ESSENTIAL | [31_activation_codes.png](screenshots/mobile/31_activation_codes.png) | Step 4 – Activation | Activation order and code | Acknowledge preferred partner | Ordered package, code, Copy, dialer, Done | Figure 27. Follow activation codes in the displayed order. | Seeded activation code; not live |
-| ESSENTIAL | [32_final_actions.png](screenshots/mobile/32_final_actions.png) | Step 4 – Actions | Complete action area without clipping | Acknowledge and scroll through final actions | Copy, dialer, Save Selection, Done, Start New, Home | Figure 28. Choose the final action after reviewing the plan. | Seeded activation code; not live |
+| ESSENTIAL | [29_activation_before_acknowledgement.png](screenshots/mobile/29_activation_before_acknowledgement.png) | Step 4 – Activation | Protected one-package state before acknowledgement | Scroll to partner note without checking it | Unchecked box, masked sequence, disabled Copy/**Open code in dialer**/Done | Figure 25. Confirm the preferred partner before using activation actions. | Seeded one-package plan; activation sequence code masked |
+| ESSENTIAL | [30_partner_acknowledged.png](screenshots/mobile/30_partner_acknowledged.png) | Step 4 – Activation | Enabled one-package state after acknowledgement | Check preferred-partner box | Checked state, visible code, enabled **Open code in dialer** and Done | Figure 26. Acknowledgement reveals and enables the single activation code. | Seeded activation code |
+| ESSENTIAL | [31_activation_codes.png](screenshots/mobile/31_activation_codes.png) | Step 4 – Activation | Single activation order and revealed code | Acknowledge preferred partner | Ordered package, code, Copy, **Open code in dialer** | Figure 27. Use the revealed activation code after confirming the preferred partner. | Seeded activation code; not live |
+| ESSENTIAL | [32_final_actions.png](screenshots/mobile/32_final_actions.png) | Step 4 – Actions | Complete one-package action area without clipping | Acknowledge and scroll through final actions | Copy, **Open code in dialer**, Save Selection, Done, Start New, Home | Figure 28. Choose the final action after reviewing the one-package plan. | Seeded activation code; not live |
 | SUPPORTING | [33_done_landing.png](screenshots/mobile/33_done_landing.png) | Landing – Complete | Landing after Done | Select Done | Saved card and recent recommendation | Figure 29. Done returns to the roaming landing page. | Seeded completed/saved plan |
 | SUPPORTING | [34_start_new.png](screenshots/mobile/34_start_new.png) | Step 4 – Navigation | Start New action on completed plan | Open completed/saved plan and acknowledge | Done, Start New, Home | Figure 30. Select Start New to clear the active trip draft. | Seeded completed plan/code |
 | SUPPORTING | [35_new_trip_reset.png](screenshots/mobile/35_new_trip_reset.png) | Step 1 – Reset | Fresh destination step after reset | Select Start New | No selected country; disabled Continue | Figure 31. A new trip starts with the previous draft cleared. | Seeded country catalogue |
