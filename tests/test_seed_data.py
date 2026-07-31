@@ -8,7 +8,6 @@ from app.extensions import db
 from app.models import ComplaintTicket, RoamingPackage, User, UserMonthlyUsage
 from app.seed_data import MONTHLY_USAGE, PACKAGE_CATALOGUE, SEEDED_USERS, seed_all
 
-
 SEEDED_EMAILS = {email for _name, email, _phone in SEEDED_USERS}
 
 EXPECTED_USERS = {

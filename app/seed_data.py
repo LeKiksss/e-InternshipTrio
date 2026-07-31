@@ -1,7 +1,7 @@
 """Idempotent seed data for local development and repeatable team setup."""
 
 import json
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from .extensions import db
 from .models import (
@@ -13,14 +13,14 @@ from .models import (
     UserMonthlyUsage,
 )
 
-
 SEEDED_USERS = (
     ("Aisha Noor", "aisha@example.test", "+971500000101"),
     ("Omar Hassan", "omar@example.test", "+971500000102"),
     ("Layla Faris", "layla@example.test", "+971500000103"),
     ("Yusuf Kareem", "yusuf@example.test", "+971500000104"),
 )
-SEEDED_PASSWORD = "Demo123!"
+# Fixed password is documented for local seeded accounts and is never a live credential.
+SEEDED_PASSWORD = "Demo123!"  # nosec B105
 
 MONTHLY_USAGE = {
     "aisha@example.test": (
@@ -252,8 +252,8 @@ def _apply_package(row, definition, supported_destinations):
     row.stackable = True
     row.active = True
     if row.created_at is None:
-        row.created_at = datetime.now()
-    row.updated_at = datetime.now()
+        row.created_at = datetime.now(timezone.utc)
+    row.updated_at = datetime.now(timezone.utc)
 
     # Keep legacy columns coherent while the existing database is upgraded in place.
     row.supported_destinations = supported_destinations
@@ -284,7 +284,7 @@ def seed_roaming_packages():
         .order_by(RoamingPackage.id)
         .all()
     )
-    for row, definition in zip(legacy_rows, available):
+    for row, definition in zip(legacy_rows, available, strict=False):
         _apply_package(row, definition, supported_destinations)
 
     db.session.flush()
@@ -308,7 +308,7 @@ def seed_primary_account_activity(user):
                 latency=21,
                 verdict="Excellent",
                 location_label="Downtown Dubai",
-                created_at=datetime.now() - timedelta(days=5),
+                created_at=datetime.now(timezone.utc) - timedelta(days=5),
             )
         )
     if BillRecord.query.filter_by(user_id=user.id).first() is None:
@@ -316,7 +316,9 @@ def seed_primary_account_activity(user):
             BillRecord(
                 user_id=user.id,
                 total_amount=468,
-                due_date=(datetime.now() + timedelta(days=5)).strftime("%d %b %Y"),
+                due_date=(datetime.now(timezone.utc) + timedelta(days=5)).strftime(
+                    "%d %b %Y"
+                ),
                 data_charges=240,
                 call_charges=72,
                 roaming_charges=96,

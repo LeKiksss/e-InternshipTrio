@@ -7,7 +7,6 @@ from flask_login import UserMixin
 
 from .extensions import db
 
-
 password_hasher = PasswordHasher()
 
 

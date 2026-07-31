@@ -279,10 +279,10 @@ def test_back_to_back_requests_keep_working_during_rate_limit_cooldown(app):
         assert calls_plan["selection"]["total_local_minutes"] >= 200
         assert calls_plan["selection"]["items"][0]["package_code"] == "VP-3D"
         assert calls_plan["gemini_rate_limited"] is True
-        assert "Gemini request limit was reached" in calls_plan["chat_message"]
+        assert calls_plan["chat_message"].startswith("Gemini limit:")
         assert cheaper["selection"]["items"][0]["package_code"] == "ESS-3D"
         assert cheaper["gemini_rate_limited"] is True
-        assert "Gemini request limit was reached" in cheaper["chat_message"]
+        assert cheaper["chat_message"].startswith("Gemini limit:")
         assert "maximum price" in cheaper["chat_message"]
     finally:
         reset_rate_limit_cooldown()

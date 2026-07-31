@@ -4,7 +4,6 @@ from app.models import RoamingPackage
 from app.services.package_fallback_optimizer import optimize_package_plan
 from app.services.recommendation_validator import validate_recommendation_decision
 
-
 LOW = {"data_gb": 0.1, "local_minutes": 1, "international_minutes": 1, "sms": 1}
 
 

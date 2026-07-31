@@ -5,7 +5,6 @@ import pytest
 
 import config
 
-
 ROOT = Path(__file__).resolve().parents[1]
 TEXT_SUFFIXES = {
     ".css",
@@ -16,11 +15,13 @@ TEXT_SUFFIXES = {
     ".ps1",
     ".py",
     ".txt",
+    ".toml",
     ".webmanifest",
     ".yaml",
     ".yml",
 }
 ROOT_TEXT_FILES = {
+    ".codespellrc",
     ".env.example",
     ".gitattributes",
     ".gitignore",

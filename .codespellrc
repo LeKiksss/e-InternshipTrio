@@ -1,0 +1,2 @@
+[codespell]
+skip = .git,.venv,instance,*.png,*.jpg,*.jpeg,*.db,*.sqlite,*.pyc

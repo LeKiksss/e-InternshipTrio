@@ -22,7 +22,6 @@ from .recommendation_values import (
     canonical_string,
 )
 
-
 UNSPLIT_SIGNATURE = "UNSPLIT"
 LOGGER = logging.getLogger(__name__)
 PLAN_ITEM_FIELDS = (
@@ -65,7 +64,8 @@ class SmartHistoryKey:
 
 def _exact_integer(value, *, field, positive=False):
     if isinstance(value, bool):
-        raise ValueError(f"{field} must be an integer.")
+        # Values are structurally valid JSON but invalid for this domain field.
+        raise ValueError(f"{field} must be an integer.")  # noqa: TRY004
     try:
         converted = int(value)
         if Decimal(str(value)) != Decimal(converted):
@@ -96,7 +96,10 @@ def normalize_split_details(segments, period_days, overall_requirements=None):
     normalized = []
     for raw in segments:
         if not isinstance(raw, dict):
-            raise ValueError("Every split segment must be an object.")
+            # Keep all invalid split payloads on the service's ValueError contract.
+            raise ValueError(  # noqa: TRY004
+                "Every split segment must be an object."
+            )
         start_day = _exact_integer(raw.get("start_day"), field="start_day")
         end_day = _exact_integer(raw.get("end_day"), field="end_day")
         normalized.append(
@@ -137,7 +140,7 @@ def normalize_split_details(segments, period_days, overall_requirements=None):
 
         if overall is not None:
             target = overall[metric]
-            provided_total = sum(provided.values(), Decimal("0"))
+            provided_total = sum(provided.values(), Decimal(0))
             missing = [index for index in range(len(normalized)) if index not in provided]
             if provided_total > target:
                 raise ValueError(
@@ -155,7 +158,7 @@ def normalize_split_details(segments, period_days, overall_requirements=None):
                     + 1
                     for index in missing
                 )
-                allocated = Decimal("0")
+                allocated = Decimal(0)
                 for position, index in enumerate(missing):
                     if position == len(missing) - 1:
                         value = remaining - allocated

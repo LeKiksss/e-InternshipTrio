@@ -1,3 +1,5 @@
+import pytest
+
 from app.models import User
 from tests.conftest import login_demo
 
@@ -53,6 +55,32 @@ def test_invalid_login(client):
     )
     assert response.status_code == 200
     assert b"incorrect" in response.data
+
+
+@pytest.mark.parametrize(
+    "unsafe_target",
+    ["//example.com", "https://example.com", "/\\example.com"],
+)
+def test_login_rejects_external_or_ambiguous_redirect_targets(client, unsafe_target):
+    response = client.post(
+        "/auth/login",
+        query_string={"next": unsafe_target},
+        data={"identity": "aisha@example.test", "password": "Demo123!"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/app")
+
+
+def test_login_accepts_an_internal_redirect_target(client):
+    response = client.post(
+        "/auth/login",
+        query_string={"next": "/app#roaming"},
+        data={"identity": "aisha@example.test", "password": "Demo123!"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/app#roaming")
 
 
 def test_logout(client):

@@ -4,7 +4,6 @@ from sqlalchemy import inspect, text
 
 from .extensions import db
 
-
 ROAMING_PACKAGE_COLUMNS = {
     "package_code": "VARCHAR(40)",
     "family": "VARCHAR(80)",

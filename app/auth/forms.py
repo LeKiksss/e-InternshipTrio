@@ -6,7 +6,6 @@ from wtforms.validators import DataRequired, Email, EqualTo, Length, ValidationE
 
 from app.models import User
 
-
 PASSWORD_PATTERN = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$")
 
 

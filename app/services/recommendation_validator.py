@@ -4,7 +4,6 @@ import logging
 
 from .package_fallback_optimizer import exact_valid_plan_exists
 
-
 LOGGER = logging.getLogger(__name__)
 REQUIREMENT_TO_TOTAL = {
     "data_gb": "total_data_gb",
@@ -289,9 +288,14 @@ def validate_recommendation_decision(
         ("less_data", "total_data_gb", lambda new, old: new < old),
     )
     for preference, field, predicate in comparisons:
-        if preference in comparative and current_selection.get(field) is not None:
-            if not predicate(selection[field], current_selection[field]):
-                errors.append(f"The plan does not fulfill the latest {preference.replace('_', ' ')} request.")
+        if (
+            preference in comparative
+            and current_selection.get(field) is not None
+            and not predicate(selection[field], current_selection[field])
+        ):
+            errors.append(
+                f"The plan does not fulfill the latest {preference.replace('_', ' ')} request."
+            )
     if "fewer_calls" in comparative and current_selection:
         new_calls = selection["total_local_minutes"] + selection["total_international_minutes"]
         old_calls = float(current_selection.get("total_local_minutes", 0)) + float(
@@ -337,7 +341,7 @@ def validate_recommendation_decision(
         return None, errors
 
     LOGGER.info("Recommendation validation passed")
-    segments = list(sorted(segment_map.values(), key=lambda item: item["start_day"]))
+    segments = sorted(segment_map.values(), key=lambda item: item["start_day"])
     for segment in segments:
         segment["requirements"] = segment_requirements.get(segment["segment_id"], {})
     return {

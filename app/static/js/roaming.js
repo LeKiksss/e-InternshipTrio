@@ -118,7 +118,7 @@
 
     function planItemHTML(item, { final = false } = {}) {
       const quantity = item.quantity > 1 ? ` × ${item.quantity}` : "";
-      const codeCopy = final ? `<span class="plan-code">${escapeHTML(item.activation_code)}</span>` : "";
+      const codeCopy = final ? `<span class="plan-code">${controller.state.carrierAcknowledged ? escapeHTML(item.activation_code) : "Activation code available after confirmation"}</span>` : "";
       return `<article class="plan-item" data-package-code="${escapeHTML(item.package_code)}"><div class="plan-order">${item.activation_order}</div><div class="plan-item-copy"><div><h3>${escapeHTML(item.package_name)}${quantity}</h3></div><p>Days ${item.coverage_start_day}–${item.coverage_end_day} · AED ${Number(item.price_per_package_aed).toFixed(0)} each</p><div class="plan-allowances"><span>${Number(item.data_gb_per_package).toFixed(1)} GB</span><span>${item.local_minutes_per_package} local min</span><span>${item.international_minutes_per_package} intl min</span><span>${item.sms_per_package} SMS</span></div>${codeCopy}</div></article>`;
     }
 
@@ -174,7 +174,6 @@
       $("#package-destination").textContent = recommendation.destination;
       $("#package-trip-duration").textContent = `${recommendation.trip.trip_days} days`;
       $("#package-activation-count").textContent = selection.activation_count;
-      $("#package-network").textContent = "Connected to preferred partner";
       renderActivationSequence();
       renderAcknowledgement();
     }
@@ -201,8 +200,11 @@
       $("#activation-card").classList.toggle("locked", !acknowledged);
       $("#activation-code").setAttribute("aria-hidden", String(!acknowledged));
       $("#copy-code").disabled = !acknowledged; $("#open-dialer").disabled = !acknowledged; $("#roaming-done").disabled = !acknowledged;
+      $("#copy-code").textContent = hasMultipleActivations ? "Copy activation codes" : "Copy activation code";
       $("#open-dialer").textContent = hasMultipleActivations ? "Open first code in dialer" : "Open code in dialer";
+      $("#package-network").textContent = acknowledged ? "Preferred partner confirmed" : "Confirmation required";
       $("#activation-lock-message").hidden = acknowledged;
+      if (controller.state.recommendation) renderItems($("#final-plan-items"), controller.state.recommendation, { final: true });
       renderActivationSequence();
     }
     function renderChat() {
@@ -356,7 +358,7 @@
     $("#start-over-roaming").addEventListener("click", async () => { await controller.reset(); $("#country-search").value = ""; $$('[data-country-group]').forEach((group) => group.hidden = false); const buttons = $$("#country-list button[data-country]"); buttons.forEach((button) => { button.hidden = false; button.classList.remove("selected"); }); renderCountryCount(buttons.length); controller.go("step1", { replace: true }); });
     $("#view-recent-roaming").addEventListener("click", () => { if (controller.state.recommendation) controller.go("result"); });
     $("#saved-recommendations-list").addEventListener("click", (event) => { const card = event.target.closest(".saved-roaming-card"); if (!card) return; if (event.target.closest("[data-view-saved]")) viewSaved(card._recommendation); if (event.target.closest("[data-remove-saved]")) confirmAction({ title: "Remove saved recommendation?", message: "This removes the saved plan from the current session.", action: "Remove", tone: "danger", onConfirm: async () => { try { const response = await api(`/api/roaming/saved/${card.dataset.savedId}`, { method: "DELETE" }); renderSavedRecommendations(response.recommendations); if (controller.state.savedId === card.dataset.savedId) controller.update({ savedId: null }); toast("Saved recommendation removed."); } catch (error) { toast(error.message, "error"); } } }); });
-    $("#copy-code").addEventListener("click", async (event) => { if (!controller.state.carrierAcknowledged) return; const button = event.currentTarget; const codes = expandedActivations().map((item) => `${item.order}. ${item.code}`).join("\n"); try { await navigator.clipboard.writeText(codes); } catch { const area = document.createElement("textarea"); area.value = codes; document.body.append(area); area.select(); document.execCommand("copy"); area.remove(); } button.textContent = "Copied"; toast("Activation codes copied in order."); setTimeout(() => button.textContent = "Copy activation codes", 1500); });
+    $("#copy-code").addEventListener("click", async (event) => { if (!controller.state.carrierAcknowledged) return; const button = event.currentTarget; const activations = expandedActivations(); const hasMultipleActivations = activations.length > 1; const codes = activations.map((item) => `${item.order}. ${item.code}`).join("\n"); try { await navigator.clipboard.writeText(codes); } catch { const area = document.createElement("textarea"); area.value = codes; document.body.append(area); area.select(); document.execCommand("copy"); area.remove(); } button.textContent = "Copied"; toast(hasMultipleActivations ? "Activation codes copied in order." : "Activation code copied."); setTimeout(() => button.textContent = hasMultipleActivations ? "Copy activation codes" : "Copy activation code", 1500); });
     $("#open-dialer").addEventListener("click", () => { if (!controller.state.carrierAcknowledged) return; const activations = expandedActivations(); const first = activations[0]; if (!first) return; const hasMultipleActivations = activations.length > 1; confirmAction({ title: "Open your dialer?", message: hasMultipleActivations ? "The first activation code will be placed in the dialer. Nothing is activated automatically." : "The activation code will be placed in the dialer. Nothing is activated automatically.", action: "Open dialer", onConfirm: () => { window.location.href = `tel:${first.code.replace(/#/g, "%23")}`; } }); });
 
     await controller.restore();

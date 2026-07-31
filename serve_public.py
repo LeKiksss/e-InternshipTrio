@@ -6,7 +6,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 from waitress import serve
 
-
 BASE_DIR = Path(__file__).resolve().parent
 PUBLIC_HOST = "127.0.0.1"
 

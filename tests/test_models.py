@@ -1,5 +1,11 @@
 from app import DESTINATIONS, seed_database
-from app.models import BillRecord, ComplaintTicket, DiagnosticResult, RoamingPackage, User
+from app.models import (
+    BillRecord,
+    ComplaintTicket,
+    DiagnosticResult,
+    RoamingPackage,
+    User,
+)
 
 
 def test_database_seeding(app):
@@ -22,7 +28,7 @@ def test_roaming_package_records_exist(app):
             for package in packages
         )
         assert len(DESTINATIONS) == 32
-        assert DESTINATIONS == sorted(DESTINATIONS)
+        assert DESTINATIONS == sorted(DESTINATIONS)  # noqa: SIM300
         assert all(package.destinations == DESTINATIONS for package in packages)
 
         before = (User.query.count(), RoamingPackage.query.count())

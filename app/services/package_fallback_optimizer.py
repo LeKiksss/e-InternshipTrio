@@ -3,7 +3,6 @@
 import math
 from collections import defaultdict
 
-
 METRIC_FIELDS = {
     "data_gb": "data_gb",
     "local_minutes": "local_minutes",
@@ -44,13 +43,11 @@ def _meets(totals, requirements, maximum_price_aed=None, minimum_validity_days=N
         return False
     if minimum_validity_days is not None and totals["validity_days"] < minimum_validity_days:
         return False
-    if (
+    return not (
         requirements.get("total_call_minutes") is not None
         and totals["local_minutes"] + totals["international_minutes"] + 1e-9
         < float(requirements["total_call_minutes"])
-    ):
-        return False
-    return True
+    )
 
 
 def _normalized_waste(totals, requirements, exact_targets):
@@ -156,7 +153,7 @@ def _supports_trip_wide_minimums(packages, trip_days, trip_wide_minimums):
     except ValueError:
         return False
 
-    for package, covered_days in zip(packages, allocations):
+    for package, covered_days in zip(packages, allocations, strict=True):
         share = covered_days / trip_days
         for metric, field in METRIC_FIELDS.items():
             required = float(trip_wide_minimums.get(metric, 0)) * share
@@ -278,7 +275,7 @@ def _compress_items(
     coverage_cursor = day_offset + 1
     activation_order = 1
     previous_repeat_is_mergeable = False
-    for package, covered_days in zip(packages, allocations):
+    for package, covered_days in zip(packages, allocations, strict=True):
         coverage_end = coverage_cursor + covered_days - 1
         if (
             items
@@ -406,18 +403,31 @@ def optimize_package_plan(
                     exact_only=segment_extra[segment_index] == 0,
                 )
             except ValueError:
-                if not segment_extra[segment_index]:
-                    raise
-                relaxed_constraints.append("minimum validity")
-                candidate = _search(
-                    packages,
-                    segment_days,
-                    segment["requirements"],
-                    segment.get("exact_targets", {}),
-                    preferences,
-                    maximum_price_aed=None,
-                    exact_only=True,
-                )
+                if segment_extra[segment_index]:
+                    relaxed_constraints.append("minimum validity")
+                    candidate = _search(
+                        packages,
+                        segment_days,
+                        segment["requirements"],
+                        segment.get("exact_targets", {}),
+                        preferences,
+                        maximum_price_aed=None,
+                        exact_only=True,
+                    )
+                else:
+                    # A short segment may need an allowance available only in a
+                    # longer package. The catalogue marks these plans stackable,
+                    # so retain the segment boundary and allow unused validity.
+                    relaxed_constraints.append("segment validity")
+                    candidate = _search(
+                        packages,
+                        segment_days,
+                        segment["requirements"],
+                        segment.get("exact_targets", {}),
+                        preferences,
+                        maximum_price_aed=None,
+                        exact_only=False,
+                    )
             items = _compress_items(
                 candidate["packages"],
                 day_offset=segment["start_day"] - 1,

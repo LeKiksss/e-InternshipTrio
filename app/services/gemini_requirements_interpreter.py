@@ -4,7 +4,7 @@ import json
 import logging
 import re
 from decimal import Decimal
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
@@ -31,7 +31,6 @@ from .recommendation_values import (
     canonical_string,
 )
 from .user_requirement_parser import parse_user_requirements
-
 
 LOGGER = logging.getLogger(__name__)
 MetricName = Literal[
@@ -62,7 +61,7 @@ class CompleteRequirements(BaseModel):
     sms: MetricString
     period_days: int = Field(ge=1)
     split: bool
-    split_details: Optional[list[InterpretedSplitSegment]] = None
+    split_details: list[InterpretedSplitSegment] | None = None
 
     @model_validator(mode="after")
     def validate_split_shape(self):
@@ -80,7 +79,7 @@ class CompleteRequirements(BaseModel):
 class RequirementsInterpretation(BaseModel):
     fully_understood: bool
     clarification_required: bool
-    clarification_question: Optional[str] = Field(default=None, max_length=240)
+    clarification_question: str | None = Field(default=None, max_length=240)
     unresolved_fragments: list[str] = Field(default_factory=list, max_length=8)
     requirements: CompleteRequirements
     changed_metrics: list[MetricName] = Field(default_factory=list)
@@ -631,7 +630,7 @@ def validate_interpreted_requirements(
         if not split_details:
             raise ValueError("A split request must include exact split details.")
         expected_day = 1
-        segment_totals = {metric: Decimal("0") for metric in METRIC_NAMES}
+        segment_totals = {metric: Decimal(0) for metric in METRIC_NAMES}
         for index, raw in enumerate(
             sorted(split_details, key=lambda item: (item.start_day, item.end_day)),
             start=1,

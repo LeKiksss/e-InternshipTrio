@@ -2,7 +2,6 @@
 
 from flask import Blueprint, current_app, make_response, send_from_directory
 
-
 pwa_bp = Blueprint("pwa", __name__)
 
 

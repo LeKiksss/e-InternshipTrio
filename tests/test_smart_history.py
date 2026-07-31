@@ -4,19 +4,19 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import Numeric, inspect
 
-from app.extensions import db
 from app import seed_database
+from app.extensions import db
 from app.models import (
     BillRecord,
     RoamingPackage,
     SmartRecommendationHistory,
     User,
 )
+from app.services.package_fallback_optimizer import optimize_package_plan
 from app.services.recommendation_values import (
     canonical_decimal,
     canonical_string,
 )
-from app.services.package_fallback_optimizer import optimize_package_plan
 from app.services.roaming_recommendation import build_recommendation
 from app.services.smart_history import (
     UNSPLIT_SIGNATURE,
@@ -29,7 +29,6 @@ from app.services.smart_history import (
 )
 from app.services.usage_analysis import build_trip_usage_analysis
 from tests.conftest import login_seeded
-
 
 METRICS = {
     "data_gb": 5,

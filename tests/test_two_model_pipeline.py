@@ -1,5 +1,5 @@
 import json
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -7,7 +7,6 @@ import pytest
 
 from app.extensions import db
 from app.models import (
-    RoamingPackage,
     SmartRecommendationHistory,
     User,
     UserMonthlyUsage,
@@ -28,7 +27,7 @@ from tests.conftest import login_seeded
 
 
 def trip(days):
-    start = date.today() + timedelta(days=60)
+    start = datetime.now(timezone.utc).date() + timedelta(days=60)
     return start.isoformat(), (start + timedelta(days=days - 1)).isoformat()
 
 
@@ -454,7 +453,7 @@ def test_initial_repeat_skips_both_models_for_same_and_equivalent_other_user(
         target_rows = UserMonthlyUsage.query.filter_by(
             user_id=omar.id
         ).order_by(UserMonthlyUsage.usage_month).all()
-        for source, target in zip(source_rows, target_rows):
+        for source, target in zip(source_rows, target_rows, strict=True):
             target.data_gb = source.data_gb
             target.local_minutes = source.local_minutes
             target.international_minutes = source.international_minutes
@@ -903,7 +902,7 @@ def test_interpreter_failure_uses_python_adjustment_instead_of_giving_up(
         "chat_message"
     ].lower()
     if expected_limit:
-        assert "Gemini request limit was reached" in refined.json[
+        assert "Gemini limit:" in refined.json[
             "chat_message"
         ]
     with client.session_transaction() as active_session:
@@ -1067,9 +1066,7 @@ def test_planner_request_is_stored_high_thinking_and_uses_configured_model():
     client = SimpleNamespace(interactions=FakeInteractions())
     request_recommendation_decision(
         {
-            "trip_requirements": {
-                metric: "1.000000" for metric in METRIC_NAMES
-            },
+            "trip_requirements": dict.fromkeys(METRIC_NAMES, "1.000000"),
             "active_package_catalogue": [],
         },
         api_key="shared-key",

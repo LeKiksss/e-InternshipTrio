@@ -2,7 +2,6 @@
 
 import re
 
-
 _GREETING = re.compile(
     r"^(?:"
     r"hi+|hello+|hey+|hiya|howdy|greetings|"

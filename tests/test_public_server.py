@@ -4,7 +4,6 @@ import re
 import pytest
 from flask import request, url_for
 
-
 FORWARDED_HEADERS = {
     "X-Forwarded-Proto": "https",
     "X-Forwarded-Host": "example.trycloudflare.com",

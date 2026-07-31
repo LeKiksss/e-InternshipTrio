@@ -2,7 +2,7 @@
 
 ## Purpose and capture basis
 
-This handoff documents the customer-facing **Roaming Recommender** exactly as it behaved on 30 July 2026. It is intended as source material for a formal User Manual, not as an architecture or setup guide.
+This handoff documents the customer-facing **Roaming Recommender** after its final review on 31 July 2026. It is intended as source material for a formal User Manual, not as an architecture or setup guide.
 
 - Walkthrough account: seeded Aisha account (`aisha@example.test`). The password is intentionally omitted.
 - Primary capture: mobile/PWA layout at `430 × 900` CSS pixels.
@@ -11,7 +11,7 @@ This handoff documents the customer-facing **Roaming Recommender** exactly as it
 - Main seven-day trip: 29 August–4 September 2026, inclusive.
 - Separate three-day split-request trip: 12–14 September 2026, inclusive.
 - Desktop trip: 4–10 August 2026, inclusive.
-- The normal Waitress-served Flask application, current SQLite data, session workflow, and real recommendation endpoints were used. Gemini connection attempts were unavailable during this capture, so the application followed its implemented deterministic fallback/Smart History paths. No UI was fabricated.
+- The normal Waitress-served Flask application, SQLite data, session workflow, and real recommendation endpoints were used. The reviewed captures use the deterministic fallback/Smart History paths so results remain repeatable without consuming Gemini quota. No UI was fabricated.
 - All customer, account, usage, package, price, and activation-code values shown are seeded POC data.
 
 ## Customer workflow at a glance
@@ -24,7 +24,7 @@ This handoff documents the customer-facing **Roaming Recommender** exactly as it
 6. Review the plan in **Step 3 of 4 – Review and adjust**. Open **More details** or use **Adjust recommendation** if needed.
 7. Select **Continue with this plan**.
 8. On **Step 4 of 4 – Final recommendation**, review the complete sequence and confirm the preferred-partner acknowledgement.
-9. Use **Copy activation codes** and **Open code in dialer** for a single activation, or **Open first code in dialer** when the plan contains multiple activations, only after reviewing the activation guidance. Nothing is activated automatically.
+9. Use **Copy activation code** and **Open code in dialer** for a single activation, or their plural/first-code labels when the plan contains multiple activations, only after reviewing the activation guidance. Nothing is activated automatically.
 10. Optionally select **Save Selection**, then select **Done**, **Start New**, or **Home**.
 
 ## Detailed customer instructions
@@ -134,17 +134,17 @@ The separate three-day request was:
 
 > I need 10 GB on Day 1 and 2 GB combined across Days 2 and 3. Keep everything else the same.
 
-The current fallback path did **not** render the requested split. It returned one **Data Plus 3 Days** package at AED 109 with 10.0 GB, 90 local minutes, 30 international minutes, and 25 SMS. There was no segment timeline, and the displayed total was 10 GB rather than the stated 12 GB. This must be documented as observed behavior, not rewritten as the expected split result.
+The deterministic fallback preserves both explicit periods and renders a two-segment timeline: Day 1 requires 10 GB, while Days 2–3 require 2 GB. The validated catalogue plan uses **Data Plus 3 Days**, **Data Plus 1 Day**, and **Roam Essentials 1 Day** for AED 163, with 13.5 GB, 130 local minutes, 45 international minutes, 40 SMS, and three activations. The total exceeds the requested 12 GB because catalogue packages are selected as minimums, not exact caps.
 
 ### H. Final recommendation and activation
 
 - Selecting **Continue with this plan** opens **Step 4 of 4 – Final recommendation**.
 - The heading is **Your plan is ready**. The screen shows destination, dates, inclusive trip length, **Complete package sequence**, package order, coverage days, allowances, total price, combined validity, activation count, and partner status.
-- The final card renders an activation code beside each package. Separately, the **ACTIVATION ORDER** sequence masks its code until acknowledgement. This distinction is important: in the current UI, the code is already visible in the package card before acknowledgement even though the activation sequence, Copy, dialer, and Done controls remain protected.
+- Before acknowledgement, every package card shows **Activation code available after confirmation** and the **ACTIVATION ORDER** sequence masks each code. No activation code is visible anywhere on the page until the customer confirms the partner note.
 - **Confirm your preferred partner** instructs: **Before activation, make sure your phone is connected to a preferred partner network.**
-- Before acknowledgement, the activation-sequence code is masked, **Copy activation codes**, the activation-aware dialer button, and **Done** are disabled, and the message is **Confirm the preferred partner connection above to reveal activation codes.**
-- Checking **I confirm that I am connected to a preferred partner network.** reveals the activation-sequence code and enables the protected actions. The toast is **Preferred partner confirmed. Activation codes are now available.**
-- **Copy activation codes** copies an ordered list. The button briefly becomes **Copied** and the toast is **Activation codes copied in order.**
+- Before acknowledgement, the activation-sequence code is masked, the activation-aware Copy and dialer buttons and **Done** are disabled, **Partner status** is **Confirmation required**, and the message is **Confirm the preferred partner connection above to reveal activation codes.**
+- Checking **I confirm that I am connected to a preferred partner network.** reveals the package and sequence codes, changes **Partner status** to **Preferred partner confirmed**, and enables the protected actions. The toast is **Preferred partner confirmed. Activation codes are now available.**
+- A single activation uses **Copy activation code** and the toast **Activation code copied.** Multiple activations use **Copy activation codes** and **Activation codes copied in order.** The button briefly becomes **Copied** in both cases.
 - For one activation, the button reads **Open code in dialer** and the confirmation says **The activation code will be placed in the dialer. Nothing is activated automatically.** For multiple activations, it reads **Open first code in dialer** and says **The first activation code will be placed in the dialer. Nothing is activated automatically.** Both use the title **Open your dialer?** and the confirm action **Open dialer**.
 - Guidance under the sequence reads **Activate each package in the displayed order and confirm the carrier response before continuing.** and **No package will activate automatically.**
 - **Save Selection** is available independently of the acknowledgement. **Done** requires acknowledgement; otherwise the toast is **Acknowledge the network note before finishing.**
@@ -198,7 +198,7 @@ The current fallback path did **not** render the requested split. It returned on
 | Continue with this plan | Step 3 | A recommendation exists | Accepts current plan | Opens Final recommendation |
 | ← (Back to recommendation adjustment) | Step 4 | Always | Returns from final plan | Opens Step 3, or landing for a saved-plan view |
 | Preferred-partner checkbox | Step 4 | Always | Records acknowledgement | Reveals sequence code; enables Copy, dialer, and Done |
-| Copy activation codes | Step 4 | Partner acknowledged | Copies ordered codes | Brief **Copied** state and success toast |
+| Copy activation code / Copy activation codes | Step 4 | Partner acknowledged; label depends on activation count | Copies the code or ordered codes | Brief **Copied** state and singular/plural success toast |
 | Open code in dialer / Open first code in dialer | Step 4 | Partner acknowledged; label depends on whether the plan has one or multiple activations | Opens confirmation | Confirming places the code, or the first code in a sequence, in the device dialer |
 | Save Selection | Step 4 | Current recommendation is not already saved | Saves to session | Becomes disabled **Saved** and adds landing card |
 | Done | Step 4 | Partner acknowledged | Completes current journey | Returns to roaming landing |
@@ -240,7 +240,7 @@ The current fallback path did **not** render the requested split. It returned on
 | Unchanged closest plan | **I reviewed that request, but your current package is still the closest valid match, so I kept it unchanged.** |
 | Updated service levels | **The package plan was updated for the requested service levels.** |
 | Earliest history | **You are already viewing the earliest recommendation in this path.** |
-| Gemini rate/frequency fallback | Begins **The Gemini request limit was reached**; continues locally with an adjustment, unchanged-plan explanation, or clarification |
+| Gemini rate/frequency fallback | Begins **Gemini limit:**; continues locally with an adjustment, unchanged-plan explanation, or clarification |
 | Recommendation changed/restored | **Recommendation reviewed.** / **Recommendation restored.** |
 | Save | **Recommendation saved.** / **Recommendation already saved.** |
 | Save failure | **The recommendation is incomplete and could not be saved.** |
@@ -248,7 +248,7 @@ The current fallback path did **not** render the requested split. It returned on
 | Before partner confirmation | **Confirm the preferred partner connection above to reveal activation codes.** |
 | Partner confirmed | **Preferred partner confirmed. Activation codes are now available.** |
 | Activation guidance | **Activate each package in the displayed order and confirm the carrier response before continuing.** / **No package will activate automatically.** |
-| Copy success | **Activation codes copied in order.** and temporary **Copied** button text |
+| Copy success | **Activation code copied.** for one activation or **Activation codes copied in order.** for multiple activations, plus temporary **Copied** button text |
 | Dialer confirmation | **Open your dialer?** / **The activation code will be placed in the dialer. Nothing is activated automatically.** for one activation; the sentence adds **first** for multiple activations |
 | Done without acknowledgement | **Acknowledge the network note before finishing.** |
 | Offline | **We cannot reach e& Care right now** and the server-status/retry messages listed in the PWA section |
@@ -299,33 +299,34 @@ All authenticated screenshots below contain seeded POC customer/package data. No
 | ESSENTIAL | [17_chat_ambiguous_request.png](screenshots/mobile/17_chat_ambiguous_request.png) | Step 3 – Clarification | Minutes ambiguity prompt | Send “I need 200 minutes.” | User request; local/international question | Figure 16. Clarify which type of minutes should change. | Seeded plan; test chat text |
 | ESSENTIAL | [18_chat_clarification_answer.png](screenshots/mobile/18_chat_clarification_answer.png) | Step 3 – Clarification | Answer and unchanged-plan response | Answer “Local” | Full clarification exchange and assistant result | Figure 17. The app applies the clarification to the current plan. | Seeded plan; test chat text |
 | OPTIONAL | [20_split_request.png](screenshots/mobile/20_split_request.png) | Step 3 – Split request | Three-day day-specific request sent | Send the documented Day 1/Days 2–3 request | Request bubble and reviewing state | Figure 18. Submit a time-specific data requirement. | Seeded three-day plan; test chat text |
-| OPTIONAL | [21_split_result.png](screenshots/mobile/21_split_result.png) | Step 3 – Split result | Actual unsplit Data Plus 3 Days result | Wait for split-request response | AED 109; 10 GB; 90/30 minutes; 25 SMS | Figure 19. Current fallback result for the time-specific request. | Seeded fallback result; does not match requested 12 GB split |
-| ESSENTIAL | [23_save_selection.png](screenshots/mobile/23_save_selection.png) | Step 4 – Save | Final page immediately before save | Scroll to Save Selection | Masked sequence, disabled activation actions, Save Selection | Figure 20. Save the selected plan for the current session. | Seeded package/code data; sequence code masked |
-| ESSENTIAL | [24_saved_recommendations.png](screenshots/mobile/24_saved_recommendations.png) | Landing – Saved | Saved recommendation card | Select Save Selection, then Exit | Saved card, View Details, Remove, recent card | Figure 21. Open or remove a session-saved recommendation. | Seeded saved plan |
-| SUPPORTING | [26_remove_saved.png](screenshots/mobile/26_remove_saved.png) | Landing – Saved | Removal confirmation sheet | Select Remove on a saved card | Remove saved recommendation?, Remove, Cancel | Figure 22. Confirm before removing a saved recommendation. | Blurred background contains seeded plan data |
-| ESSENTIAL | [27_continue_with_plan.png](screenshots/mobile/27_continue_with_plan.png) | Step 3 – Accept | Updated plan with primary acceptance action | Complete split test and scroll to chat/actions | Assistant message and Continue with this plan | Figure 23. Continue when the displayed plan is acceptable. | Seeded fallback result |
-| ESSENTIAL | [28_final_recommendation.png](screenshots/mobile/28_final_recommendation.png) | Step 4 – Final | Top of final plan | Select Continue with this plan | Trip dates, package sequence, code, price, allowances | Figure 24. Review the complete final package sequence. | Seeded package and activation code |
-| ESSENTIAL | [29_activation_before_acknowledgement.png](screenshots/mobile/29_activation_before_acknowledgement.png) | Step 4 – Activation | Protected one-package state before acknowledgement | Scroll to partner note without checking it | Unchecked box, masked sequence, disabled Copy/**Open code in dialer**/Done | Figure 25. Confirm the preferred partner before using activation actions. | Seeded one-package plan; activation sequence code masked |
-| ESSENTIAL | [30_partner_acknowledged.png](screenshots/mobile/30_partner_acknowledged.png) | Step 4 – Activation | Enabled one-package state after acknowledgement | Check preferred-partner box | Checked state, visible code, enabled **Open code in dialer** and Done | Figure 26. Acknowledgement reveals and enables the single activation code. | Seeded activation code |
-| ESSENTIAL | [31_activation_codes.png](screenshots/mobile/31_activation_codes.png) | Step 4 – Activation | Single activation order and revealed code | Acknowledge preferred partner | Ordered package, code, Copy, **Open code in dialer** | Figure 27. Use the revealed activation code after confirming the preferred partner. | Seeded activation code; not live |
-| ESSENTIAL | [32_final_actions.png](screenshots/mobile/32_final_actions.png) | Step 4 – Actions | Complete one-package action area without clipping | Acknowledge and scroll through final actions | Copy, **Open code in dialer**, Save Selection, Done, Start New, Home | Figure 28. Choose the final action after reviewing the one-package plan. | Seeded activation code; not live |
-| SUPPORTING | [33_done_landing.png](screenshots/mobile/33_done_landing.png) | Landing – Complete | Landing after Done | Select Done | Saved card and recent recommendation | Figure 29. Done returns to the roaming landing page. | Seeded completed/saved plan |
-| SUPPORTING | [34_start_new.png](screenshots/mobile/34_start_new.png) | Step 4 – Navigation | Start New action on completed plan | Open completed/saved plan and acknowledge | Done, Start New, Home | Figure 30. Select Start New to clear the active trip draft. | Seeded completed plan/code |
-| SUPPORTING | [35_new_trip_reset.png](screenshots/mobile/35_new_trip_reset.png) | Step 1 – Reset | Fresh destination step after reset | Select Start New | No selected country; disabled Continue | Figure 31. A new trip starts with the previous draft cleared. | Seeded country catalogue |
-| OPTIONAL | [36_back_navigation.png](screenshots/mobile/36_back_navigation.png) | Step 1 – Back | Destination retained after returning from dates | Select Back from Travel dates; search France | Step 1 context, France selected, enabled Continue | Figure 32. Back returns to the prior step without losing the selection. | Seeded country catalogue; single-result card expands vertically |
-| ESSENTIAL | [37_invalid_date.png](screenshots/mobile/37_invalid_date.png) | Step 2 – Validation | Return before departure | Enter an earlier Return date | Exact validation message and disabled Continue | Figure 33. Correct the return date before continuing. | Test dates only |
-| SUPPORTING | [38_empty_required_fields.png](screenshots/mobile/38_empty_required_fields.png) | Step 1 – Empty search | No destination matches | Search `Zzz` | 0 countries, empty message, disabled Continue | Figure 34. Continue remains unavailable until a supported country is selected. | Seeded country catalogue; test search text |
+| ESSENTIAL | [21_split_result.png](screenshots/mobile/21_split_result.png) | Step 3 – Split result | Validated three-package split result | Wait for split-request response | AED 163; 13.5 GB; 130/45 minutes; 40 SMS; three activations | Figure 19. Review the validated package sequence for the time-specific request. | Seeded fallback result; meets both split minimums |
+| ESSENTIAL | [22_split_timeline.png](screenshots/mobile/22_split_timeline.png) | Step 3 – Split timeline | Day 1 and Days 2–3 requirement periods | Review the updated split recommendation | Two segment cards and assigned package names | Figure 20. Confirm that each requested period appears in the plan timeline. | Seeded fallback result and test requirements |
+| ESSENTIAL | [23_save_selection.png](screenshots/mobile/23_save_selection.png) | Step 4 – Save | Final page immediately before save | Scroll to Save Selection | Masked sequence, disabled activation actions, Save Selection | Figure 21. Save the selected plan for the current session. | Seeded package/code data; sequence code masked |
+| ESSENTIAL | [24_saved_recommendations.png](screenshots/mobile/24_saved_recommendations.png) | Landing – Saved | Saved recommendation card | Select Save Selection, then Exit | Saved card, View Details, Remove, recent card | Figure 22. Open or remove a session-saved recommendation. | Seeded saved plan |
+| SUPPORTING | [26_remove_saved.png](screenshots/mobile/26_remove_saved.png) | Landing – Saved | Removal confirmation sheet | Select Remove on a saved card | Remove saved recommendation?, Remove, Cancel | Figure 23. Confirm before removing a saved recommendation. | Blurred background contains seeded plan data |
+| ESSENTIAL | [27_continue_with_plan.png](screenshots/mobile/27_continue_with_plan.png) | Step 3 – Accept | Updated split plan with primary acceptance action | Complete split test and scroll to chat/actions | Assistant message and Continue with this plan | Figure 24. Continue when the displayed split plan is acceptable. | Seeded fallback result |
+| ESSENTIAL | [28_final_recommendation.png](screenshots/mobile/28_final_recommendation.png) | Step 4 – Final | Top of protected final plan | Select Continue with this plan | Trip dates, three-package sequence, hidden-code messages, price, allowances | Figure 25. Review the complete package sequence before confirming the partner. | Seeded package data; codes concealed |
+| ESSENTIAL | [29_activation_before_acknowledgement.png](screenshots/mobile/29_activation_before_acknowledgement.png) | Step 4 – Activation | Protected one-package state before acknowledgement | Open a one-package final plan and scroll to the partner note | Unchecked box, confirmation-required status, masked sequence, disabled singular Copy/dialer/Done | Figure 26. Confirm the preferred partner before revealing the activation code. | Seeded one-package plan; activation code concealed |
+| ESSENTIAL | [30_partner_acknowledged.png](screenshots/mobile/30_partner_acknowledged.png) | Step 4 – Activation | Enabled one-package state after acknowledgement | Check preferred-partner box | Confirmed status, visible code, enabled singular Copy/dialer and Done | Figure 27. Acknowledgement reveals and enables the single activation code. | Seeded activation code |
+| ESSENTIAL | [31_activation_codes.png](screenshots/mobile/31_activation_codes.png) | Step 4 – Activation | Single activation order and revealed code | Acknowledge preferred partner | Ordered package, code, **Copy activation code**, **Open code in dialer** | Figure 28. Use the revealed activation code after confirming the preferred partner. | Seeded activation code; not live |
+| ESSENTIAL | [32_final_actions.png](screenshots/mobile/32_final_actions.png) | Step 4 – Actions | Complete one-package action area without clipping | Acknowledge and scroll through final actions | Singular Copy/dialer, Save Selection, Done, Start New, Home | Figure 29. Choose the final action after reviewing the one-package plan. | Seeded activation code; not live |
+| SUPPORTING | [33_done_landing.png](screenshots/mobile/33_done_landing.png) | Landing – Complete | Landing after Done | Select Done | Saved card and recent recommendation | Figure 30. Done returns to the roaming landing page. | Seeded completed/saved plan |
+| SUPPORTING | [34_start_new.png](screenshots/mobile/34_start_new.png) | Step 4 – Navigation | Start New action on completed plan | Open completed/saved plan and acknowledge | Done, Start New, Home | Figure 31. Select Start New to clear the active trip draft. | Seeded completed plan/code |
+| SUPPORTING | [35_new_trip_reset.png](screenshots/mobile/35_new_trip_reset.png) | Step 1 – Reset | Fresh destination step after reset | Select Start New | No selected country; disabled Continue | Figure 32. A new trip starts with the previous draft cleared. | Seeded country catalogue |
+| OPTIONAL | [36_back_navigation.png](screenshots/mobile/36_back_navigation.png) | Step 1 – Back | Destination retained after returning from dates | Select Back from Travel dates; search France | Step 1 context, compact France result, enabled Continue | Figure 33. Back returns to the prior step without losing the selection. | Seeded country catalogue |
+| ESSENTIAL | [37_invalid_date.png](screenshots/mobile/37_invalid_date.png) | Step 2 – Validation | Return before departure | Enter an earlier Return date | Exact validation message and disabled Continue | Figure 34. Correct the return date before continuing. | Test dates only |
+| SUPPORTING | [38_empty_required_fields.png](screenshots/mobile/38_empty_required_fields.png) | Step 1 – Empty search | No destination matches | Search `Zzz` | 0 countries, empty message, disabled Continue | Figure 35. Continue remains unavailable until a supported country is selected. | Seeded country catalogue; test search text |
 | SUPPORTING | [desktop/01_home_phone_frame.png](screenshots/desktop/01_home_phone_frame.png) | Desktop – Home | Home inside Phone mode | Sign in on desktop | Simulated device frame and dashboard | Desktop Figure 1. Phone mode presents the app in a virtual device. | Seeded POC account/bill data |
 | SUPPORTING | [desktop/02_roaming_landing.png](screenshots/desktop/02_roaming_landing.png) | Desktop – Landing | Roaming landing in Phone mode | Open Roaming | Travel visual, Start planning, saved card | Desktop Figure 2. Roaming landing page in Phone mode. | Seeded saved plan from capture session |
 | SUPPORTING | [desktop/03_destination.png](screenshots/desktop/03_destination.png) | Desktop – Destination | France selected in Phone mode | Start planning and select France | Device chrome, stepper, selected row, Continue | Desktop Figure 3. Destination selection uses the same phone workflow. | Seeded country catalogue |
 | SUPPORTING | [desktop/04_recommendation.png](screenshots/desktop/04_recommendation.png) | Desktop – Recommendation | Initial seven-day recommendation | Enter valid dates and wait | Plan, totals, More details | Desktop Figure 4. Review the recommendation in the virtual phone. | Seeded fallback package result |
 | SUPPORTING | [desktop/05_chat.png](screenshots/desktop/05_chat.png) | Desktop – Chat | Chat composer in Phone mode | Scroll to Adjust recommendation | Placeholder, send arrow, Continue with this plan | Desktop Figure 5. The adjustment chat remains available in Phone mode. | Seeded current plan |
-| SUPPORTING | [desktop/06_final_plan.png](screenshots/desktop/06_final_plan.png) | Desktop – Final | Final seven-day package in Phone mode | Continue with initial plan | Trip, sequence, code, price, allowances | Desktop Figure 6. Final plan in the virtual phone frame. | Seeded package and activation code |
-| OPTIONAL | [desktop/07_expanded_mode.png](screenshots/desktop/07_expanded_mode.png) | Desktop – Expanded | Same final plan in wide layout | Select Expanded | Wide plan card and centered bottom navigation | Desktop Figure 7. Expanded mode uses a wider customer surface. | Seeded package and activation code |
+| SUPPORTING | [desktop/06_final_plan.png](screenshots/desktop/06_final_plan.png) | Desktop – Final | Protected seven-day package in Phone mode | Continue with initial plan | Trip, sequence, concealed-code message, price, allowances | Desktop Figure 6. Final plan in the virtual phone frame before partner confirmation. | Seeded package data; code concealed |
+| OPTIONAL | [desktop/07_expanded_mode.png](screenshots/desktop/07_expanded_mode.png) | Desktop – Expanded | Same protected final plan in wide layout | Select Expanded | Wide plan card, concealed-code message, and centered bottom navigation | Desktop Figure 7. Expanded mode uses a wider customer surface. | Seeded package data; code concealed |
 
 ## Screenshot quality review
 
-- Reviewed all 41 retained images individually at original resolution.
+- Reviewed all 42 retained images individually at original resolution.
 - Mobile images are consistently `430 × 900`. Six desktop Phone-mode images are `432 × 886`; Expanded is `1040 × 920`.
 - Exact hash comparison found no remaining duplicate images.
 - Login contains no entered credential. No screenshot contains a password, API key, cookie/session value, interaction ID, terminal, developer tools, or debug overlay.
@@ -337,8 +338,8 @@ All authenticated screenshots below contain seeded POC customer/package data. No
 
 | Item | Result |
 |---|---|
-| Total screenshots | 41 |
-| Mobile screenshots | 34 |
+| Total screenshots | 42 |
+| Mobile screenshots | 35 |
 | Desktop screenshots | 7 |
 | Seeded user | Aisha (`aisha@example.test`); password omitted |
 | Destination | France |
@@ -348,7 +349,7 @@ All authenticated screenshots below contain seeded POC customer/package data. No
 | Initial result | Roam Essentials 7 Days; AED 69; 3 GB; 100 local; 35 international; 30 SMS; one activation |
 | Exact refinement | “I need 10 GB and 50 SMS.” → Data Plus 7 Days; AED 239; 25 GB; 250 local; 80 international; 60 SMS |
 | Clarification | “I need 200 minutes.” → local/international question; “Local” retained the 250-local-minute current plan |
-| Split test | Tested; actual fallback returned one Data Plus 3 Days plan with 10 GB and no segment timeline |
+| Split test | Day 1 uses Data Plus 3 Days; Days 2–3 use Data Plus 1 Day plus Roam Essentials 1 Day; AED 163; 13.5 GB; 130 local; 45 international; 40 SMS; three activations and two timeline segments |
 | Save/restore | Save, duplicate-safe state, landing card, View Details behavior, and Remove confirmation tested |
 | Final activation flow | Pre-ack lock, acknowledgement, sequence code, Copy/dialer enabled state, Done, Start New, and Home captured |
 | Physical/PWA differences | Full-screen mobile with safe areas and keyboard adaptation; desktop Phone frame plus Expanded mode |
@@ -357,18 +358,14 @@ All authenticated screenshots below contain seeded POC customer/package data. No
 
 - `12_more_details_closed.png`: visually identical to `11_initial_recommendation_full.png`; removed to avoid redundancy.
 - `19_chat_clarified_result.png`: the plan was unchanged and its recommendation view was identical to `16_chat_updated_recommendation.png`; the actual clarification/result remains visible in `18_chat_clarification_answer.png`.
-- `22_split_timeline.png`: the current fallback result returned no segments, so the timeline was not rendered.
 - `25_saved_view_details.png`: the restored final view was identical to `28_final_recommendation.png`; removed to avoid redundancy.
 - `39_chat_error_or_clarification.png`: no additional useful, non-destructive chat error existed beyond the clarification and current validation/fallback captures.
 
-### Observed inconsistencies or potentially confusing behavior
+### Final consistency review
 
-1. The split request stated 10 GB on Day 1 plus 2 GB across Days 2–3, but the fallback result displayed 10 GB total, a single unsplit package, and no segment timeline. This differs from the split/segment behavior described in the README and from the expected 12 GB meaning in the capture brief.
-2. The final package card displays its activation code before preferred-partner acknowledgement, while the activation-sequence row masks the same code and disables Copy/dialer/Done. The acknowledgement therefore protects actions and one code rendering, but does not fully conceal the code on the page.
-3. The final details label **Partner status** as **Connected to preferred partner** before the customer checks the confirmation box. The box remains the actual gate for protected controls, but the status wording may imply verification too early.
-4. The README refers to an explicit **Gemini limit** chat label; current UI copy uses the sentence **The Gemini request limit was reached…** rather than a standalone label.
-5. Filtering to one destination makes the single country group/card unusually tall on mobile. It remains usable, but the presentation is visually disproportionate.
-6. The compact app-header title is ellipsized as **Roaming Reco…** on Phone/mobile layouts, although the full **Roaming Recommender** heading appears immediately below it.
-7. No separate SDD file was present in the repository, so only current UI/source behavior and README statements could be compared.
-
-These are documentation findings only. No application, test, configuration, or existing documentation file was changed to alter the observed behavior.
+- The day-specific request is preserved as two requirement segments and produces a validated three-package sequence that satisfies both periods.
+- Activation codes remain concealed everywhere on the final page until preferred-partner acknowledgement; protected actions stay disabled until then.
+- Partner status reads **Confirmation required** before acknowledgement and **Preferred partner confirmed** afterward.
+- Gemini quota responses begin with **Gemini limit:** and continue through the local fallback path.
+- A one-country search result stays compact, and the complete **Roaming Recommender** header remains visible at mobile and Phone-mode widths.
+- The repository contains no separate SDD file; this handoff was checked against the current UI, source, automated tests, and README.

@@ -4,9 +4,9 @@ import logging
 import statistics
 from datetime import date
 from decimal import Decimal
+from itertools import pairwise
 
 from .recommendation_values import METRIC_NAMES, canonical_decimal
-
 
 LOGGER = logging.getLogger(__name__)
 METRICS = METRIC_NAMES
@@ -24,7 +24,7 @@ def _record_value(record, metric):
 
 
 def _sustained_direction(values):
-    changes = [right - left for left, right in zip(values, values[1:])]
+    changes = [right - left for left, right in pairwise(values)]
     positive = sum(change > 0 for change in changes)
     negative = sum(change < 0 for change in changes)
     direction = "upward_trend" if positive >= 4 else "downward_trend" if negative >= 4 else None
@@ -60,7 +60,7 @@ def _relative_change(previous, current):
 def _successive_changes(values):
     return [
         _relative_change(previous, current)
-        for previous, current in zip(values, values[1:])
+        for previous, current in pairwise(values)
     ]
 
 
@@ -146,19 +146,21 @@ def analyse_usage(records):
         total_weight = sum(effective_weights)
         effective_weights = [weight / total_weight for weight in effective_weights]
         decimal_weights = [
-            Decimal("0") if index in excluded else Decimal(str(weight))
+            Decimal(0) if index in excluded else Decimal(str(weight))
             for index, weight in enumerate(RECENCY_WEIGHTS)
         ]
-        decimal_total_weight = sum(decimal_weights, Decimal("0"))
+        decimal_total_weight = sum(decimal_weights, Decimal(0))
         estimate = float(
             canonical_decimal(
                 sum(
                     (
                         canonical_decimal(getattr(record, metric), field=metric)
                         * weight
-                        for record, weight in zip(ordered, decimal_weights)
+                        for record, weight in zip(
+                            ordered, decimal_weights, strict=True
+                        )
                     ),
-                    Decimal("0"),
+                    Decimal(0),
                 )
                 / decimal_total_weight,
                 field=metric,
@@ -246,7 +248,8 @@ def calculate_trip_days(start_date, end_date, today=None):
     except (TypeError, ValueError) as error:
         raise ValueError("Enter valid travel dates.") from error
     if not isinstance(start, date) or not isinstance(end, date):
-        raise ValueError("Enter valid travel dates.")
+        # The caller exposes every invalid date input through one ValueError contract.
+        raise ValueError("Enter valid travel dates.")  # noqa: TRY004
     if end < start:
         raise ValueError("Return date must be on or after the departure date.")
     if today is not None and start < today:

@@ -8,7 +8,6 @@ from app.services.roaming_recommendation import (
 )
 from app.services.user_requirement_parser import parse_user_requirements
 
-
 BASE_REQUIREMENTS = {
     "data_gb": 1,
     "local_minutes": 20,
@@ -191,6 +190,38 @@ def test_omar_local_minutes_apply_across_all_three_days_and_survive_correction(a
             "local_minutes"
         ]
         assert corrected["_active_requirements"]["segments"] == []
+
+
+def test_day_specific_local_fallback_preserves_the_complete_split_request(app):
+    with app.app_context():
+        omar = User.query.filter_by(email="omar@example.test").one()
+        initial = build_recommendation(
+            omar, "France", "2030-08-01", "2030-08-03"
+        )
+        split = build_recommendation(
+            omar,
+            "France",
+            "2030-08-01",
+            "2030-08-03",
+            latest_message=(
+                "I need 10 GB on Day 1 and 2 GB combined across Days 2 and 3. "
+                "Keep everything else the same."
+            ),
+            current_recommendation=initial,
+            force_python_fallback=True,
+        )
+
+    assert [
+        (segment["start_day"], segment["end_day"])
+        for segment in split["segments"]
+    ] == [(1, 1), (2, 3)]
+    assert [
+        segment["requirements"]["data_gb"] for segment in split["segments"]
+    ] == pytest.approx([10, 2])
+    assert split["selection"]["total_data_gb"] >= 12
+    assert {
+        item["assigned_segment_id"] for item in split["selection"]["items"]
+    } == {"segment-1", "segment-2"}
 
 
 @pytest.mark.parametrize(

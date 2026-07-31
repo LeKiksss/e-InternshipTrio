@@ -5,7 +5,6 @@ from app.services.user_requirement_parser import (
     parse_user_requirements,
 )
 
-
 CURRENT = {
     "selection": {
         "total_data_gb": 8,
@@ -194,6 +193,25 @@ def test_explicit_split_values_are_attached_to_their_exact_periods():
         (segment["start_day"], segment["end_day"])
         for segment in parsed["segments"]
     ] == [(1, 7), (8, 10)]
+
+
+def test_explicit_values_before_day_periods_preserve_every_segment_total():
+    parsed = parse_user_requirements(
+        "I need 10 GB on Day 1 and 2 GB combined across Days 2 and 3. "
+        "Keep everything else the same.",
+        CURRENT,
+        3,
+    )
+
+    assert parsed["minimums"] == {}
+    assert [
+        (segment["start_day"], segment["end_day"])
+        for segment in parsed["segments"]
+    ] == [(1, 1), (2, 3)]
+    assert [
+        segment["explicit_requirements"]["data_gb"]
+        for segment in parsed["segments"]
+    ] == [10, 2]
 
 
 def test_explicit_split_periods_cannot_overlap_or_leave_the_trip_bounds():

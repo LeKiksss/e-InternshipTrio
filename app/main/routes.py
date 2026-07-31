@@ -1,7 +1,7 @@
-import json
 import hashlib
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import (
     Blueprint,
@@ -25,9 +25,6 @@ from app.models import (
     User,
     UserMonthlyUsage,
 )
-from app.services.mock_bill_analysis import analyse_bill
-from app.services.mock_complaints import classify_complaint
-from app.services.mock_diagnostics import result_for_state
 from app.services.gemini_recommender import (
     GeminiRateLimited,
     GeminiUnavailable,
@@ -37,6 +34,9 @@ from app.services.gemini_requirements_interpreter import (
     request_requirements_interpretation,
     validate_interpreted_requirements,
 )
+from app.services.mock_bill_analysis import analyse_bill
+from app.services.mock_complaints import classify_complaint
+from app.services.mock_diagnostics import result_for_state
 from app.services.recommendation_values import canonical_string
 from app.services.roaming_chat_intent import classify_roaming_chat_intent
 from app.services.roaming_history import (
@@ -48,7 +48,6 @@ from app.services.roaming_history import (
 )
 from app.services.roaming_recommendation import build_recommendation
 from app.services.user_requirement_parser import parse_user_requirements
-
 
 main_bp = Blueprint("main", __name__)
 LOGGER = logging.getLogger(__name__)
@@ -321,7 +320,11 @@ def workflow_state(name):
     view = str(payload.get("view") or "landing")[:40]
     if len(json.dumps(state)) > 3000:
         return jsonify({"ok": False, "message": "The workflow draft is too large to save in this session."}), 400
-    drafts[name] = {"state": state, "view": view, "updated_at": datetime.now().isoformat(timespec="seconds")}
+    drafts[name] = {
+        "state": state,
+        "view": view,
+        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
     session["workflow_drafts"] = drafts
     session.modified = True
     return jsonify({"ok": True})
@@ -380,7 +383,7 @@ def create_complaint():
     sequence = ComplaintTicket.query.count() + 142
     row = ComplaintTicket(
         user_id=current_user.id,
-        ticket_number=f"ET-{datetime.now().year}-{sequence:05d}",
+        ticket_number=f"ET-{datetime.now(timezone.utc).year}-{sequence:05d}",
         category=diagnosis["category"],
         severity=payload.get("severity") or diagnosis["priority"],
         summary=summary,
@@ -410,7 +413,12 @@ def complaint_note(ticket_id):
     if not note:
         return jsonify({"ok": False, "message": "Enter a note first."}), 400
     notes = json.loads(row.notes or "[]")
-    notes.append({"text": note, "date": datetime.now().strftime("%d %b, %H:%M")})
+    notes.append(
+        {
+            "text": note,
+            "date": datetime.now(timezone.utc).strftime("%d %b, %H:%M UTC"),
+        }
+    )
     row.notes = json.dumps(notes)
     row.latest_update = "You added supporting information to this ticket."
     db.session.commit()
@@ -575,7 +583,7 @@ def roaming_refine():
                 if not _has_local_adjustment(effective_message, current):
                     session.pop(ROAMING_PENDING_CLARIFICATION_KEY, None)
                     prefix = (
-                        "The Gemini request limit was reached. "
+                        "Gemini limit: "
                         if upstream_rate_limited
                         else ""
                     )
@@ -629,8 +637,7 @@ def roaming_refine():
             }
         session[ROAMING_PENDING_CLARIFICATION_KEY] = pending
         prefix = (
-            "The Gemini request limit was reached, but I can continue "
-            "locally. "
+            "Gemini limit: I can continue locally. "
             if upstream_rate_limited
             else ""
         )
@@ -749,7 +756,9 @@ def save_roaming_recommendation():
     recommendation["saved_id"] = hashlib.sha256(
         recommendation["recommendation_id"].encode("utf-8")
     ).hexdigest()[:16]
-    recommendation["saved_at"] = datetime.now().isoformat(timespec="seconds")
+    recommendation["saved_at"] = datetime.now(timezone.utc).isoformat(
+        timespec="seconds"
+    )
     saved = session.get("saved_roaming_recommendations", [])
     if not isinstance(saved, list):
         saved = []

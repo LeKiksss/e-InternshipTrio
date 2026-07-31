@@ -33,7 +33,9 @@ class UsageRow:
 def reference_weighted(values, excluded=()):
     included = [
         (value, weight)
-        for index, (value, weight) in enumerate(zip(values, RECENCY_WEIGHTS))
+        for index, (value, weight) in enumerate(
+            zip(values, RECENCY_WEIGHTS, strict=True)
+        )
         if index not in excluded
     ]
     total = sum(weight for _value, weight in included)

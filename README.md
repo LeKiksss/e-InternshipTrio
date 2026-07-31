@@ -45,7 +45,7 @@ Authenticated user
 | Styling | Custom CSS and inline SVG | Responsive phone presentation, design tokens, readable sizing, safe areas, and directional motion |
 | PWA | Web App Manifest, service worker | iPhone Home Screen installation, stable standalone viewport, safe static caching, updates, and offline fallback |
 | Public access | Waitress, Cloudflare Quick Tunnel | Loopback-only WSGI serving and temporary HTTPS access from an iPhone |
-| Testing | Pytest, Playwright | Unit, integration, security, API, and browser journeys |
+| Testing and quality | Pytest, Playwright, Ruff, codespell, Bandit, pip-audit | Unit, integration, browser, lint, spelling, source-security, and dependency checks |
 
 Python 3.11 and newer are supported. Python 3.14.2 is suitable; the GitHub Actions workflow covers Python 3.11 and 3.14 on Windows and Linux.
 
@@ -354,6 +354,9 @@ UI POC/
 |-- serve_public.py                 Hardened loopback Waitress entry point for an HTTPS tunnel
 |-- start_iphone_pwa.ps1            Checked Waitress + Cloudflare Quick Tunnel launcher
 |-- requirements.txt               Pinned Python dependencies
+|-- requirements-dev.txt           Runtime dependencies plus pinned quality-audit tools
+|-- pyproject.toml                 Reproducible Ruff release-quality rules
+|-- .codespellrc                   Repository spelling-scan exclusions and vocabulary
 |-- .env.example                    Safe environment-variable template
 `-- .gitignore                      Local secrets, databases, environments, caches, and IDE files
 ```
@@ -539,6 +542,7 @@ The distributable repository is intentionally separated from each developer's ma
 - Empty or copied example values do not enable Gemini or become a stable Flask signing secret. Local mode safely generates a temporary secret; public mode refuses to start until a unique stable secret is supplied.
 - The database, schema upgrades, seed definitions, templates, JavaScript, CSS, images, PWA icons, and Python dependencies required to run the application are tracked. A fresh clone generates only its own ignored runtime data.
 - `tests/test_portability.py` protects the blank secret template, required ignore rules, relative path resolution, and common credential/user-path patterns in distributable text files.
+- The GitHub Actions quality job runs Ruff, codespell, Bandit, and pip-audit from pinned development-tool versions on every push and pull request.
 
 The Gemini key remains backend-only. It is not rendered into HTML or JavaScript, returned by an API, written into request logs, or required by automated tests. When publishing changes, stage intended source files explicitly and confirm `git status` before committing.
 
@@ -565,6 +569,16 @@ python -m pytest -q tests/test_pwa.py tests/test_public_server.py
 python -m pytest -q tests/browser/test_pwa.py
 ```
 
+Run the same release-quality checks used by GitHub Actions:
+
+```bash
+python -m pip install -r requirements-dev.txt
+ruff check app tests tools config.py run.py serve_public.py
+codespell .
+bandit -q -r app config.py run.py serve_public.py tools
+python -m pip_audit -r requirements.txt
+```
+
 Automated tests never make a real Gemini request. They use an empty key for deterministic fallback or inject controlled structured responses.
 
 The roaming and mobile regression coverage specifically checks:
@@ -576,7 +590,7 @@ The roaming and mobile regression coverage specifically checks:
 - reachable Phone/Expanded preview controls, stable iPhone keyboard behavior, directional transitions across every workflow, and reduced-motion behavior;
 - six-month Usage History, carrier acknowledgement, masked activation controls, saved recommendations, logout clearing, and repeatable end-to-end journeys.
 
-GitHub Actions runs the same Pytest suite on Windows and Linux using Python 3.11 and 3.14. GitHub sends a workflow notification when any job in that operating-system/version matrix fails; the tests live in this repository under `tests/`, while GitHub only provides the clean runner that executes them after a push.
+GitHub Actions runs the same Pytest suite on Windows and Linux using Python 3.11 and 3.14, plus one Linux quality/security job. GitHub sends a workflow notification when any job fails; the tests and quality configuration live in this repository, while GitHub provides the clean runners that execute them after a push.
 
 ## Known boundaries
 

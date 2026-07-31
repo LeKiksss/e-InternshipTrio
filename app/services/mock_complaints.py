@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def classify_complaint(text, category=None):
@@ -23,6 +23,5 @@ def classify_complaint(text, category=None):
             else "Your report needs an account-level review by the appropriate support team."
         ),
         "confidence": "High" if len(text or "") > 25 else "Medium",
-        "generated_at": datetime.now().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
-

@@ -4,7 +4,7 @@ import hashlib
 import json
 import logging
 from copy import deepcopy
-from datetime import date
+from datetime import datetime, timezone
 
 from flask import current_app
 
@@ -32,7 +32,6 @@ from .smart_history import (
 )
 from .usage_analysis import METRICS, build_trip_usage_analysis, calculate_trip_days
 from .user_requirement_parser import merge_requirement_state, parse_user_requirements
-
 
 LOGGER = logging.getLogger(__name__)
 SELECTION_TOTAL_FIELDS = {
@@ -312,7 +311,9 @@ def _apply_explicit_segment_targets(segments, minimums):
             for segment in adjustable_segments
         ]
         allocated = canonical_decimal(0, field=metric)
-        for index, (segment, share) in enumerate(zip(adjustable_segments, shares)):
+        for index, (segment, share) in enumerate(
+            zip(adjustable_segments, shares, strict=True)
+        ):
             value = (
                 remaining_target - allocated
                 if index == len(adjustable_segments) - 1
@@ -426,14 +427,12 @@ def _refinement_chat_message(
     )
     if gemini_rate_limited and changed:
         message = (
-            "The Gemini request limit was reached, so I updated the plan using "
-            "the local package catalogue."
+            "Gemini limit: I updated the plan using the local package catalogue."
         )
     elif gemini_rate_limited:
         message = (
-            "The Gemini request limit was reached, so I checked the available "
-            "packages locally. Your current package is still the closest valid "
-            "match, so I kept it unchanged."
+            "Gemini limit: I checked the available packages locally. Your current "
+            "package is still the closest valid match, so I kept it unchanged."
         )
     elif not changed:
         message = (
@@ -469,7 +468,11 @@ def build_recommendation(
     upstream_gemini_rate_limited=False,
     today=None,
 ):
-    trip_days = calculate_trip_days(start_date, end_date, today=today or date.today())
+    trip_days = calculate_trip_days(
+        start_date,
+        end_date,
+        today=today or datetime.now(timezone.utc).date(),
+    )
     usage_rows = (
         UserMonthlyUsage.query.filter_by(user_id=user.id)
         .order_by(UserMonthlyUsage.usage_month)
@@ -512,7 +515,6 @@ def build_recommendation(
         parsed = merge_requirement_state(previous_requirements, latest_parsed)
         if latest_parsed["restore_original"]:
             current_recommendation = None
-            conversation = []
         parsed["preservation_minimums"] = _refinement_preservation_minimums(
             current_recommendation,
             latest_parsed,

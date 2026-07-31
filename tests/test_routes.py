@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -6,7 +6,7 @@ from tests.conftest import login_demo
 
 
 def future_trip(days=7):
-    start = date.today() + timedelta(days=30)
+    start = datetime.now(timezone.utc).date() + timedelta(days=30)
     return start.isoformat(), (start + timedelta(days=days - 1)).isoformat()
 
 

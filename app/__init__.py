@@ -7,9 +7,9 @@ from flask_wtf.csrf import CSRFError, generate_csrf
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from config import Config
+
 from .extensions import csrf, db, login_manager
 from .models import User
-
 
 COUNTRY_FLAGS = {
     "Australia": "🇦🇺",
@@ -125,9 +125,7 @@ def create_app(config_object=Config):
         if endpoint == "pwa.service_worker":
             response.headers["Cache-Control"] = "no-store, max-age=0"
             response.headers["Service-Worker-Allowed"] = "/"
-        elif endpoint in {"pwa.manifest", "pwa.offline"}:
-            response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
-        elif endpoint == "static":
+        elif endpoint in {"pwa.manifest", "pwa.offline"} or endpoint == "static":
             response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
         else:
             response.headers["Cache-Control"] = "no-store, private, max-age=0"

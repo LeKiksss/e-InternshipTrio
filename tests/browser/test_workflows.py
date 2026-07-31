@@ -1,11 +1,10 @@
 import json
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from playwright.sync_api import expect
 
 from .conftest import login_demo
-
 
 pytestmark = pytest.mark.browser
 
@@ -244,7 +243,7 @@ def test_roaming_dialer_copy_matches_activation_count(page, live_app_url):
     login_demo(page, live_app_url)
     open_screen(page, "roaming")
 
-    start = date.today() + timedelta(days=2)
+    start = datetime.now(timezone.utc).date() + timedelta(days=2)
     end_seven_days = start + timedelta(days=6)
     end_nine_days = start + timedelta(days=8)
 
@@ -260,9 +259,20 @@ def test_roaming_dialer_copy_matches_activation_count(page, live_app_url):
     page.locator("#continue-roaming-plan").click()
     expect(page.locator('[data-testid="final-roaming-recommendation"]')).to_be_visible()
     expect(page.locator("#package-activation-count")).to_have_text("1")
+    expect(page.locator("#package-network")).to_have_text("Confirmation required")
+    expect(page.locator("#final-plan-items .plan-code")).to_have_text(
+        "Activation code available after confirmation"
+    )
+    expect(page.locator("#copy-code")).to_have_text("Copy activation code")
     expect(page.locator("#open-dialer")).to_have_text("Open code in dialer")
 
     page.locator("#carrier-acknowledgement").check()
+    expect(page.locator("#package-network")).to_have_text(
+        "Preferred partner confirmed"
+    )
+    expect(page.locator("#final-plan-items .plan-code")).not_to_have_text(
+        "Activation code available after confirmation"
+    )
     page.locator("#open-dialer").click()
     expect(page.locator("#confirm-message")).to_have_text(
         "The activation code will be placed in the dialer. Nothing is activated automatically."
@@ -279,6 +289,7 @@ def test_roaming_dialer_copy_matches_activation_count(page, live_app_url):
     page.locator("#continue-roaming-plan").click()
     expect(page.locator('[data-testid="final-roaming-recommendation"]')).to_be_visible()
     expect(page.locator("#package-activation-count")).to_have_text("3")
+    expect(page.locator("#copy-code")).to_have_text("Copy activation codes")
     expect(page.locator("#open-dialer")).to_have_text("Open first code in dialer")
 
     page.locator("#carrier-acknowledgement").check()
@@ -293,6 +304,11 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     login_demo(page, live_app_url)
     open_screen(page, "roaming")
     expect(page.locator("#roaming-title")).to_have_text("Roaming Recommender")
+    expect(page.locator("#header-title")).to_have_text("Roaming Recommender")
+    header_title_size = page.locator("#header-title").evaluate(
+        "(node) => ({ clientWidth: node.clientWidth, scrollWidth: node.scrollWidth })"
+    )
+    assert header_title_size["scrollWidth"] <= header_title_size["clientWidth"] + 1
     assert_clean_visible_copy(page)
     assert_no_horizontal_overflow(page)
     assert_minimum_visible_text_size(page, '.screen[data-screen="roaming"]')
@@ -314,7 +330,7 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
         hero_geometry["width"] / hero_geometry["height"] - 1150 / 560
     ) < 0.01
 
-    start = date.today() + timedelta(days=2)
+    start = datetime.now(timezone.utc).date() + timedelta(days=2)
     end_seven_days = start + timedelta(days=6)
     end_nine_days = start + timedelta(days=8)
     end_fourteen_days = start + timedelta(days=13)
@@ -378,6 +394,16 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator('[data-country="Saudi Arabia"]')).to_be_hidden()
     expect(page.locator("[data-country-group]:visible .country-letter")).to_have_text("B")
     expect(page.locator("#country-count")).to_have_text("3 countries")
+    page.locator("#country-search").fill("braz")
+    expect(page.locator("#country-list button[data-country]:visible")).to_have_count(1)
+    single_group_layout = page.locator("[data-country-group]:visible").evaluate(
+        """(group) => {
+          const letter = group.querySelector('.country-letter').getBoundingClientRect();
+          const button = group.querySelector('button[data-country]:not([hidden])').getBoundingClientRect();
+          return { groupHeight: group.getBoundingClientRect().height, contentHeight: letter.height + button.height };
+        }"""
+    )
+    assert single_group_layout["groupHeight"] <= single_group_layout["contentHeight"] + 20
     page.locator("#country-search").fill("zz")
     expect(page.locator("#country-list button[data-country]:visible")).to_have_count(0)
     expect(page.locator("#country-count")).to_have_text("0 countries")
@@ -521,9 +547,7 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#carrier-note-network")).to_have_text(
         "connected to a preferred partner network"
     )
-    expect(page.locator("#package-network")).to_have_text(
-        "Connected to preferred partner"
-    )
+    expect(page.locator("#package-network")).to_have_text("Confirmation required")
     assert "automatic partner" not in page.locator(
         '[data-testid="carrier-acknowledgement"]'
     ).inner_text().lower()
@@ -548,6 +572,7 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#roaming-done")).to_be_disabled()
     expect(page.locator("#activation-sequence .activation-step")).not_to_have_count(0)
     assert "*170*" not in page.locator("#activation-sequence").inner_text()
+    assert "*170*" not in page.locator("#final-plan-items").inner_text()
     page.locator("#save-recommendation").click()
     expect(page.locator("#save-recommendation")).to_have_text("Saved")
     page.locator("#carrier-acknowledgement").check()
@@ -556,6 +581,10 @@ def test_roaming_recalculates_adjusts_saves_and_clears_on_logout(page, live_app_
     expect(page.locator("#roaming-done")).to_be_enabled()
     expect(page.locator("#activation-code")).to_have_attribute("aria-hidden", "false")
     assert "*170*" in page.locator("#activation-sequence").inner_text()
+    assert "*170*" in page.locator("#final-plan-items").inner_text()
+    expect(page.locator("#package-network")).to_have_text(
+        "Preferred partner confirmed"
+    )
     expect(page.locator("#copy-code")).to_have_text("Copy activation codes")
     page.locator("#copy-code").click()
     expect(page.locator("#copy-code")).to_have_text("Copied")

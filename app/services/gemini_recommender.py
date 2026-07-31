@@ -7,13 +7,11 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field, PrivateAttr, ValidationError
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -112,15 +110,15 @@ class PackagePlanItemDecision(BaseModel):
     coverage_start_day: int = Field(ge=1)
     coverage_end_day: int = Field(ge=1)
     activation_order: int = Field(ge=1)
-    assigned_segment_id: Optional[str] = None
-    reason_for_item: Optional[str] = None
+    assigned_segment_id: str | None = None
+    reason_for_item: str | None = None
 
 
 class RecommendationDecision(BaseModel):
     trip_segments: list[UsageSegmentDecision] = Field(default_factory=list)
     package_items: list[PackagePlanItemDecision] = Field(min_length=1)
     modification_summary: str = Field(min_length=1, max_length=180)
-    _interaction_id: Optional[str] = PrivateAttr(default=None)
+    _interaction_id: str | None = PrivateAttr(default=None)
 
 
 PLANNER_SYSTEM_INSTRUCTION = """

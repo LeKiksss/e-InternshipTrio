@@ -1,7 +1,6 @@
 """Canonical numeric values used by roaming recommendation matching."""
 
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 METRIC_NAMES = (
     "data_gb",

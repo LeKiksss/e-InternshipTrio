@@ -5,7 +5,6 @@ from playwright.sync_api import expect
 
 from .conftest import login_demo
 
-
 pytestmark = pytest.mark.browser
 
 IPHONE_SAFARI_USER_AGENT = (
@@ -187,7 +186,7 @@ def test_service_worker_caches_only_shell_and_offline_never_private_content(
     assert "/offline" in cached_urls
     assert "/app" not in cached_urls
     assert "/static/definitely-missing.js" not in cached_urls
-    assert not any(path.startswith("/api/") or path.startswith("/auth/") for path in cached_urls)
+    assert not any(path.startswith(("/api/", "/auth/")) for path in cached_urls)
 
     page.goto(f"{live_app_url}/_test/origin-unavailable")
     expect(page.locator("#offline-title")).to_be_visible()

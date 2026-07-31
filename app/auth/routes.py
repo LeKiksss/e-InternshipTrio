@@ -1,13 +1,33 @@
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from flask_login import current_user, login_user, logout_user
 from sqlalchemy import func, or_
 
 from app.extensions import db
 from app.models import User
+
 from .forms import LoginForm, RegistrationForm
 
-
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+def _safe_next_url(value):
+    """Accept only absolute-path redirects within this application."""
+
+    return bool(
+        value
+        and value.startswith("/")
+        and not value.startswith("//")
+        and "\\" not in value
+    )
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -24,9 +44,7 @@ def login():
             next_url = request.args.get("next")
             safe_next_url = (
                 next_url
-                if next_url
-                and next_url.startswith("/")
-                and not next_url.startswith("//")
+                if _safe_next_url(next_url)
                 else url_for("main.app_shell")
             )
             return redirect(safe_next_url)

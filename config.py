@@ -5,7 +5,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
@@ -98,7 +97,8 @@ class Config:
 class TestConfig(Config):
     TESTING = True
     PUBLIC_HTTPS_MODE = False
-    SECRET_KEY = "test-secret-key"
+    # Fixed value is limited to isolated automated tests.
+    SECRET_KEY = "test-secret-key"  # nosec B105
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     WTF_CSRF_ENABLED = False
     SESSION_COOKIE_SECURE = False

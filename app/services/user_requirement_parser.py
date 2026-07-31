@@ -1,8 +1,8 @@
 """Deterministic extraction of explicit roaming-plan requirements."""
 
-from copy import deepcopy
 import math
 import re
+from copy import deepcopy
 
 
 def _number(pattern, text):
@@ -317,7 +317,7 @@ def parse_user_requirements(message, current_recommendation=None, trip_days=None
         "minimums": minimums,
         "exact_targets": exact_targets,
         "maximum_price_aed": maximum_price,
-        "minimum_validity_days": int(math.ceil(minimum_validity)) if minimum_validity else None,
+        "minimum_validity_days": math.ceil(minimum_validity) if minimum_validity else None,
         "comparative": comparative,
         "segments": segments,
         "restore_original": restore_original,
@@ -410,13 +410,55 @@ def parse_temporal_segments(message, trip_days):
         "ten": 10,
         "fourteen": 14,
     }
-    explicit_period_pattern = re.compile(
-        r"\b(?:(first|final|last)\s+"
-        r"(\d+|one|two|three|four|five|six|seven|eight|nine|ten|fourteen)\s+days?"
-        r"|days?\s+(\d+)\s*(?:-|â€“|â€”|to|through)\s*(\d+))\b",
+    value_before_period_pattern = re.compile(
+        r"\b(?P<value>\d+(?:\.\d+)?)\s*"
+        r"(?P<unit>gb|local(?:\s+call)?\s+minutes?|"
+        r"international(?:\s+call)?\s+minutes?|sms|texts?)\b"
+        r"(?:\s+combined)?\s+(?:on|for|during|across)\s+"
+        r"(?:day\s+(?P<single_day>\d+)"
+        r"|days\s+(?P<start_day>\d+)\s*"
+        r"(?:-|\u2013|\u2014|to|through|and)\s*(?P<end_day>\d+))\b",
         flags=re.IGNORECASE,
     )
-    explicit_matches = list(explicit_period_pattern.finditer(lowered))
+    for match in value_before_period_pattern.finditer(lowered):
+        start_day = int(match.group("single_day") or match.group("start_day"))
+        end_day = int(match.group("single_day") or match.group("end_day"))
+        if start_day < 1 or end_day > trip_days or start_day > end_day:
+            raise ValueError("Split periods must stay within the trip dates.")
+        unit = match.group("unit").lower()
+        metric = (
+            "data_gb"
+            if unit == "gb"
+            else "local_minutes"
+            if unit.startswith("local")
+            else "international_minutes"
+            if unit.startswith("international")
+            else "sms"
+        )
+        add(
+            start_day,
+            end_day,
+            "Explicit numeric requirements for this trip period",
+            explicit_requirements={metric: float(match.group("value"))},
+            data_factor=1.0,
+            local_factor=1.0,
+            international_factor=1.0,
+            sms_factor=1.0,
+        )
+
+    explicit_period_pattern = re.compile(
+        r"\b(?:"
+        r"(?P<position>first|final|last)\s+"
+        r"(?P<length>\d+|one|two|three|four|five|six|seven|eight|nine|ten|fourteen)\s+days?"
+        r"|days\s+(?P<range_start>\d+)\s*"
+        r"(?:-|\u2013|\u2014|to|through|and)\s*(?P<range_end>\d+)"
+        r"|day\s+(?P<single>\d+)"
+        r")\b",
+        flags=re.IGNORECASE,
+    )
+    explicit_matches = (
+        [] if descriptors else list(explicit_period_pattern.finditer(lowered))
+    )
     for index, match in enumerate(explicit_matches):
         clause_end = (
             explicit_matches[index + 1].start()
@@ -427,13 +469,15 @@ def parse_temporal_segments(message, trip_days):
         explicit_requirements = _numeric_segment_requirements(clause)
         if not explicit_requirements:
             continue
-        if match.group(3) is not None:
-            start_day = int(match.group(3))
-            end_day = int(match.group(4))
+        if match.group("range_start") is not None:
+            start_day = int(match.group("range_start"))
+            end_day = int(match.group("range_end"))
+        elif match.group("single") is not None:
+            start_day = end_day = int(match.group("single"))
         else:
-            length_text = match.group(2)
+            length_text = match.group("length")
             length = int(length_text) if length_text.isdigit() else number_words[length_text]
-            if match.group(1) == "first":
+            if match.group("position") == "first":
                 start_day, end_day = 1, length
             else:
                 start_day, end_day = trip_days - length + 1, trip_days
@@ -450,10 +494,7 @@ def parse_temporal_segments(message, trip_days):
             sms_factor=1.0,
         )
 
-    if descriptors:
-        explicit_ranges = True
-    else:
-        explicit_ranges = False
+    explicit_ranges = bool(descriptors)
 
     first_week = "first week" in lowered or "first seven days" in lowered
     second_week = "second week" in lowered or "next week" in lowered
