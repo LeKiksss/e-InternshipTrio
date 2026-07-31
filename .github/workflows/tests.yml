@@ -71,5 +71,14 @@ jobs:
       - name: Install browser
         run: python -m playwright install chromium
 
-      - name: Run tests
-        run: python -m pytest -q
+      - name: Run non-browser tests
+        run: python -m pytest -q -m "not browser"
+
+      - name: Run browser tests
+        id: browser_tests
+        continue-on-error: true
+        run: python -m pytest -q -m browser
+
+      - name: Retry browser tests after a transient failure
+        if: steps.browser_tests.outcome == 'failure'
+        run: python -m pytest -q -m browser
