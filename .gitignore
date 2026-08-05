@@ -7,3 +7,8 @@ venv/
 
 # Instance / Local database files
 instance/
+
+.env
+serviceAccountKey.json
+lib/firebase_options.dart
+e_insights/functions/.env 
