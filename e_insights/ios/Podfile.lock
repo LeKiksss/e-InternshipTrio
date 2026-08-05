@@ -1,0 +1,22 @@
+PODS:
+  - Flutter (1.0.0)
+  - flutter_speed_test_plus (1.0.0):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - flutter_speed_test_plus (from `.symlinks/plugins/flutter_speed_test_plus/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  flutter_speed_test_plus:
+    :path: ".symlinks/plugins/flutter_speed_test_plus/ios"
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_speed_test_plus: 615fd20d02344a5ea745f1a123ce2ded805abf7e
+
+PODFILE CHECKSUM: 4b015915ec662986b54bf30ab778da63f7dda016
+
+COCOAPODS: 1.16.2
